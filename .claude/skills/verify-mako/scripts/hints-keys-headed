@@ -1,8 +1,9 @@
 #!/bin/bash
 # Link hints with real keys: F labels the page, typing a label follows it, typing narrows
 # (Delete takes a letter back, a letter no label has is refused), Escape ends it, ⇧F opens
-# the chosen link beneath, F in a text field types, and a page that keeps F gets it while
-# ⌘J still works. Keys only, no pointer events, so it also runs over a remote session such
+# the chosen link beneath, F in a text field types, a page that keeps F gets it while ⌘J
+# still works, and a field a menu focuses while labels show (address bar, rename) gets
+# the keys. Keys only, no pointer events, so it also runs over a remote session such
 # as Jump Desktop. Headed: takes keyboard focus; warn the person first. Exit status = failures.
 set -u
 cd "$(dirname "$0")/../../../.."
@@ -19,6 +20,8 @@ count() { $M "$P" tree 30 | grep -c 'mako\.hint\.'; }
 labels-are() { test "$(count)" = "$1"; }
 q() { python3 -I -c "import json,sys; s=json.load(open(sys.argv[1])); n=s['nodes']; print($1)" "$J"; }
 # page <file>: select the page loaded from that fixture file
+active-url-ends() { q "n[str(s['active'])]['url']" | grep -q "$1\$"; }
+any-url-ends() { q "[v['url'] for v in n.values()]" | grep -q "$1'"; }
 page() { $M "$P" press-id "mako.trail.$(q "next(k for k, v in n.items() if v['url'].endswith('/$1'))")"; sleep 0.5; }
 trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
 
@@ -32,21 +35,22 @@ out=$($C launch "" "$U/index.html" "$U/many.html" "$U/eats-f.html" 2>&1) || { ec
 P=$($C pid); sleep 3
 
 echo "== F labels, a label follows"
-page index.html; $M "$P" key f
-check f-labels-the-page within labels-are 6
+# A first key right after launch can land before Mako's activation settles; Escape is a no-op on the page.
+page index.html; $M "$P" key escape; sleep 0.3; $M "$P" key f
+check f-labels-the-page within labels-are 7
 $M "$P" shot "$MAKO_RUN/evidence/f.png" >/dev/null 2>&1
 $M "$P" key s
 check typing-a-label-follows-it within sh -c "$M $P title | grep -qx Two"
 check labels-gone-after-follow labels-are 0
 
 echo "== Escape"
-page index.html; $M "$P" key f; within labels-are 6
+page index.html; $M "$P" key f; within labels-are 7
 $M "$P" key escape
 check escape-ends-hints within labels-are 0
 check escape-follows-nothing test "$($M "$P" title)" = Hints
 
 echo "== F in a text field types"
-$M "$P" key f; within labels-are 6; $M "$P" key f
+$M "$P" key f; within labels-are 7; $M "$P" key f
 within sh -c "$M $P title | grep -qx typing"
 $M "$P" key f
 check f-in-text-field-types within sh -c "$M $P title | grep -qx 'typed f'"
@@ -64,14 +68,15 @@ check unknown-letter-keeps-hints labels-are 7
 $M "$P" key delete
 check delete-takes-letter-back within labels-are 20
 $M "$P" key h; $M "$P" key s
-check two-letter-label-follows within sh -c "q \"n[str(s['active'])]['url']\" | grep -q 'two.html?14$'"
+check two-letter-label-follows within active-url-ends 'two.html?14'
 
 echo "== ⇧F opens beneath"
-page index.html; $M "$P" key shift+f
-check shift-f-labels-only-web-links within labels-are 2
+page index.html; $M "$P" menu View Reload; $M "$P" wait-title Hints 5 >/dev/null; sleep 0.5
+$M "$P" key shift+f
+check shift-f-labels-only-web-links within labels-are 3
 $M "$P" key a
-check shift-f-opens-beneath within sh -c "q \"[v['url'] for v in n.values()]\" | grep -q three.html"
-check shift-f-stays test "$($M "$P" title)" = "typed f"
+check shift-f-opens-beneath within any-url-ends three.html
+check shift-f-stays test "$($M "$P" title)" = Hints
 
 echo "== a page that keeps F"
 page eats-f.html; $M "$P" key f
@@ -83,6 +88,17 @@ $M "$P" key cmd+l
 check shortcut-ends-hints within labels-are 0
 check shortcut-still-acts within $M "$P" exists mako.omnibox
 $M "$P" key escape
+
+echo "== a field focused from a menu takes the keys"
+renamed() { test "$(q "n['1']['name']")" = Renamed; }
+page index.html; $M "$P" key cmd+j; within labels-are 7
+$M "$P" menu File "Open Location…"; sleep 0.3; $M "$P" type abc
+check address-bar-gets-keys-after-hints test "$($M "$P" value mako.omnibox.field)" = abc
+$M "$P" key escape
+$M "$P" key cmd+j; within labels-are 7
+$M "$P" menu Trails "Rename Page…"; sleep 0.3; $M "$P" type Renamed; $M "$P" key return
+check rename-field-gets-keys-during-hints within renamed
+check rename-ends-hints labels-are 0
 
 echo "== hints-keys-headed failed=$fails"
 exit "$fails"

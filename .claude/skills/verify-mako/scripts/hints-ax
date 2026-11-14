@@ -41,7 +41,7 @@ fresh() { $M "$P" press-id mako.trail.1; within sh -c "$M $P tree 4 | grep -q 'm
 echo "== jump to link"
 open-hints "Jump to Link…"
 labels > "$MAKO_RUN/evidence/labels.txt"; $M "$P" shot "$MAKO_RUN/evidence/labels.png" >/dev/null 2>&1
-check labels-only-what-is-in-view test "$(labels)" = "$(printf 's two.html\na three.html\nd Press\nf Type here\nj Script\nk Save')"
+check labels-only-what-is-in-view test "$(labels)" = "$(printf 's two.html\na three.html\nd Press\nf Type here\nj Script\nk Save\nl three.html?half')"
 check menu-shows-shortcut sh -c "$M $P tree 4 --menus | grep -q 'Jump to Link….*cmd=\"J\"'"
 $M "$P" press-id mako.hint.s
 check link-label-follows-the-link within $M "$P" wait-title Two 1
@@ -54,12 +54,14 @@ open-hints "Jump to Link…"; $M "$P" press-id mako.hint.f
 check text-field-label-focuses-it within $M "$P" wait-title typing 1
 open-hints "Jump to Link…"; $M "$P" press-id mako.hint.j
 check script-link-runs within $M "$P" wait-title "script link" 1
-open-hints "Jump to Link…"; $M "$P" press-id mako.hint.k
+open-hints "Jump to Link…"; $M "$P" press-id mako.hint.l
+check half-covered-link-clicks-its-visible-part within sh -c "python3 -I -c 'import json,sys; n=json.load(open(sys.argv[1]))[\"nodes\"]; sys.exit(not any(v[\"url\"].endswith(\"three.html?half\") for v in n.values()))' '$MAKO_RUN/state/trails.json'"
+fresh; open-hints "Jump to Link…"; $M "$P" press-id mako.hint.k
 check download-link-downloads within sh -c "ls '$MAKO_RUN/state/downloads' | grep -q three"
 
 echo "== open link beneath"
 open-hints "Open Link Beneath…"
-check beneath-labels-only-web-links test "$(labels)" = "$(printf 's two.html\na three.html')"
+check beneath-labels-only-web-links test "$(labels)" = "$(printf 's two.html\na three.html\nd three.html?half')"
 before=$($M "$P" title)
 $M "$P" press-id mako.hint.a
 check beneath-opens-three within sh -c "$M $P menu-items Trails | grep -q three.html"
@@ -72,6 +74,12 @@ $M "$P" wait-title Hints 5 >/dev/null
 open-hints "Jump to Link…"; $M "$P" shot "$MAKO_RUN/evidence/zoomed.png" >/dev/null 2>&1; $M "$P" press-id mako.hint.f
 check zoomed-label-clicks-its-field within $M "$P" wait-title typing 1
 $M "$P" menu View "Actual Size"
+
+echo "== the address bar ends hints"
+fresh; check labels-before-address-bar open-hints "Jump to Link…"
+$M "$P" menu File "Open Location…"
+check address-bar-ends-hints within sh -c "test \$($M $P tree 30 | grep -c mako.hint) = 0"
+$M "$P" press-id mako.omnibox.scrim
 
 echo "== labels end"
 fresh

@@ -43,8 +43,9 @@ final class LinkHints {
     /// Bumped on every start and cancel, so a late page reply never shows stale labels.
     private var generation = 0
 
-    /// Visible links and controls: their top-left, a point on them that is not covered by
-    /// anything else, the web address a link goes to, and a name for accessibility.
+    /// Visible, enabled links and controls: their top-left, a point on them that is not
+    /// covered by anything else (the centre, else an edge or corner, so a partly covered
+    /// link still counts), the web address a link goes to, and a name for accessibility.
     private static let collect = """
         const pick = 'a[href], area[href], button, input:not([type=hidden]), select, textarea, summary, '
           + '[contenteditable=""], [contenteditable=true], [onclick], [tabindex]:not([tabindex="-1"]), '
@@ -53,13 +54,17 @@ final class LinkHints {
         const web = el => typeof el.href === 'string' && /^https?:/.test(el.href) && !el.hasAttribute('download');
         const found = [];
         for (const el of document.querySelectorAll(pick)) {
-          if (el.disabled || (links && !web(el))) continue;
+          if (el.matches(':disabled') || (links && !web(el))) continue;
           for (const r of el.getClientRects()) {
             const left = Math.max(r.left, 0), top = Math.max(r.top, 0);
             const right = Math.min(r.right, innerWidth), bottom = Math.min(r.bottom, innerHeight);
             if (right - left < 2 || bottom - top < 2) continue;
-            const x = (left + right) / 2, y = (top + bottom) / 2;
-            if (document.elementFromPoint(x, y)?.closest(pick) !== el) continue;
+            const midX = (left + right) / 2, midY = (top + bottom) / 2;
+            const spot = [[midX, midY], [left + 1, midY], [right - 1, midY], [midX, top + 1], [midX, bottom - 1],
+                          [left + 1, top + 1], [right - 1, bottom - 1]]
+              .find(([x, y]) => document.elementFromPoint(x, y)?.closest(pick) === el);
+            if (!spot) continue;
+            const [x, y] = spot;
             const name = (web(el) && el.href) || el.getAttribute('aria-label') || el.innerText?.trim().slice(0, 80)
               || el.getAttribute('placeholder') || el.tagName.toLowerCase();
             found.push({ left, top, x, y, link: web(el) ? el.href : null, name });
@@ -130,7 +135,10 @@ final class LinkHints {
     /// Hint mode sees every key and click first. Letters pick, Delete takes one back, and
     /// Escape, a shortcut, a scroll or a click anywhere but a label ends it.
     private func passes(_ event: NSEvent) -> Bool {
-        guard event.window === overlay.window else { cancel(); return true }
+        // Hints own keys only while the page has them: a menu that focused the address bar
+        // or a rename field ends hints, and the key goes there.
+        guard let window = event.window, window === overlay.window,
+              event.type != .keyDown || window.firstResponder === page else { cancel(); return true }
         switch event.type {
         case .keyDown:
             guard event.modifierFlags.isDisjoint(with: [.command, .control, .option]) else { cancel(); return true }

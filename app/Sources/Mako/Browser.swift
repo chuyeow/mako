@@ -557,6 +557,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     private func showOmnibox(for target: OmniTarget, text: String? = nil) {
+        hints.cancel()
         omniTarget = target
         field.stringValue = text ?? ""
         let purpose = switch target {
