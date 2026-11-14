@@ -2,6 +2,7 @@
 //! Pure functions only – the Swift shell owns I/O, clocks and the web view.
 
 mod ffi;
+pub mod hints;
 pub mod trails;
 
 pub const DEFAULT_SEARCH: &str = "https://www.google.com/search?q=%s";
