@@ -110,7 +110,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// wait for the page's next reload.
     private var userLoads: [ObjectIdentifier: WKNavigation] = [:]
     private let webConfig = WKWebViewConfiguration()
-    private let container = NSView()
+    private let container = PageContainer()
+    private let hints = LinkHints()
     private let sidebar = Sidebar()
     private let favicons = Favicons()
     private let divider = DividerView()
@@ -197,6 +198,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onOpenConfig = { [unowned self] in openConfig(nil) }
         favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
+        container.onUnhandledKey = { [unowned self] in hintKey($0) }
+        container.onResize = { [unowned self] in hints.cancel() }
 
         sidebar.onExit = { [unowned self] in if sidebarState == .peeking { setSidebar(.hidden) } }
         sidebar.onToggleSidebar = { [unowned self] in toggleSidebar(nil) }
@@ -328,6 +331,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         let active = store.active
         let view = active.map(liveView)
         if view !== shown {
+            hints.cancel()
             shown?.removeFromSuperview()
             shown = view
             if let view {
@@ -673,6 +677,22 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func zoomOut(_: Any?) { if let shown { shown.pageZoom = max(0.3, shown.pageZoom - 0.1) } }
     @objc func zoomReset(_: Any?) { shown?.pageZoom = 1 }
     @objc func openConfig(_: Any?) { NSWorkspace.shared.open(Core.configURL) }
+
+    @objc func jumpToLink(_: Any?) { startHints(beneath: false) }
+    @objc func openLinkBeneath(_: Any?) { startHints(beneath: true) }
+
+    /// A bare F the page passed on starts link hints; ⇧F opens the chosen link beneath.
+    private func hintKey(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
+              event.charactersIgnoringModifiers?.lowercased() == "f" else { return false }
+        startHints(beneath: event.modifierFlags.contains(.shift))
+        return true
+    }
+
+    private func startHints(beneath: Bool) {
+        guard !omniboxOpen, let page = shown as? PageView else { return NSSound.beep() }
+        hints.start(on: page, in: container, beneath: beneath, color: store.active?.color)
+    }
 
     @objc func findInPage(_: Any?) { showOmnibox(for: .find, text: field.stringValue) }
     @objc func findNext(_: Any?) { find(backwards: false) }

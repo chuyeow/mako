@@ -48,10 +48,25 @@ final class PageView: WKWebView {
 
     private func replayLeftClick(like event: NSEvent) {
         backgroundUntil = .now + 1
+        leftClick(at: event.locationInWindow)
+    }
+
+    /// A real left click on the page at a point in CSS pixels from the viewport's top-left,
+    /// so the page sees a trusted click and links keep their target and download behaviour.
+    func click(css point: CGPoint) {
+        leftClick(at: convert(viewPoint(css: point), to: nil))
+    }
+
+    func viewPoint(css point: CGPoint) -> NSPoint {
+        let scale = pageZoom * magnification
+        return NSPoint(x: point.x * scale, y: isFlipped ? point.y * scale : bounds.height - point.y * scale)
+    }
+
+    private func leftClick(at location: NSPoint) {
         for (type, pressure) in [(NSEvent.EventType.leftMouseDown, Float(1)), (.leftMouseUp, 0)] {
-            guard let click = NSEvent.mouseEvent(with: type, location: event.locationInWindow, modifierFlags: [],
-                                                 timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil,
-                                                 eventNumber: event.eventNumber, clickCount: 1, pressure: pressure) else { return }
+            guard let click = NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                                                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window?.windowNumber ?? 0,
+                                                 context: nil, eventNumber: 0, clickCount: 1, pressure: pressure) else { return }
             type == .leftMouseDown ? mouseDown(with: click) : mouseUp(with: click)
         }
     }

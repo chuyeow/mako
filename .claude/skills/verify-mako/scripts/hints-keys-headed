@@ -1,0 +1,88 @@
+#!/bin/bash
+# Link hints with real keys: F labels the page, typing a label follows it, typing narrows
+# (Delete takes a letter back, a letter no label has is refused), Escape ends it, ⇧F opens
+# the chosen link beneath, F in a text field types, and a page that keeps F gets it while
+# ⌘J still works. Keys only, no pointer events, so it also runs over a remote session such
+# as Jump Desktop. Headed: takes keyboard focus; warn the person first. Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+unset MAKO_BACKGROUND
+export MAKO_RUN="$PWD/verify-runs/hints-keys-headed"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+J="$MAKO_RUN/state/trails.json"
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1 (title: $($M "$P" title 2>/dev/null); labels: $(count 2>/dev/null))"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+within() { for _ in $(seq 30); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+count() { $M "$P" tree 30 | grep -c 'mako\.hint\.'; }
+labels-are() { test "$(count)" = "$1"; }
+q() { python3 -I -c "import json,sys; s=json.load(open(sys.argv[1])); n=s['nodes']; print($1)" "$J"; }
+# page <file>: select the page loaded from that fixture file
+page() { $M "$P" press-id "mako.trail.$(q "next(k for k, v in n.items() if v['url'].endswith('/$1'))")"; sleep 0.5; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/hints >/dev/null 2>&1 &
+srv=$!; sleep 1
+U="http://127.0.0.1:$port"
+out=$($C launch "" "$U/index.html" "$U/many.html" "$U/eats-f.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); sleep 3
+
+echo "== F labels, a label follows"
+page index.html; $M "$P" key f
+check f-labels-the-page within labels-are 6
+$M "$P" shot "$MAKO_RUN/evidence/f.png" >/dev/null 2>&1
+$M "$P" key s
+check typing-a-label-follows-it within sh -c "$M $P title | grep -qx Two"
+check labels-gone-after-follow labels-are 0
+
+echo "== Escape"
+page index.html; $M "$P" key f; within labels-are 6
+$M "$P" key escape
+check escape-ends-hints within labels-are 0
+check escape-follows-nothing test "$($M "$P" title)" = Hints
+
+echo "== F in a text field types"
+$M "$P" key f; within labels-are 6; $M "$P" key f
+within sh -c "$M $P title | grep -qx typing"
+$M "$P" key f
+check f-in-text-field-types within sh -c "$M $P title | grep -qx 'typed f'"
+check f-in-text-field-no-labels labels-are 0
+$M "$P" key escape
+
+echo "== narrowing"
+page many.html; $M "$P" key f
+check twenty-links-twenty-labels within labels-are 20
+$M "$P" key h
+check first-letter-narrows within labels-are 7
+$M "$P" shot "$MAKO_RUN/evidence/narrowed.png" >/dev/null 2>&1
+$M "$P" key x
+check unknown-letter-keeps-hints labels-are 7
+$M "$P" key delete
+check delete-takes-letter-back within labels-are 20
+$M "$P" key h; $M "$P" key s
+check two-letter-label-follows within sh -c "q \"n[str(s['active'])]['url']\" | grep -q 'two.html?14$'"
+
+echo "== ⇧F opens beneath"
+page index.html; $M "$P" key shift+f
+check shift-f-labels-only-web-links within labels-are 2
+$M "$P" key a
+check shift-f-opens-beneath within sh -c "q \"[v['url'] for v in n.values()]\" | grep -q three.html"
+check shift-f-stays test "$($M "$P" title)" = "typed f"
+
+echo "== a page that keeps F"
+page eats-f.html; $M "$P" key f
+check page-keeps-its-f within sh -c "$M $P title | grep -qx 'page got f'"
+check no-labels-when-page-takes-f labels-are 0
+$M "$P" key cmd+j
+check cmd-j-labels-anyway within labels-are 1
+$M "$P" key cmd+l
+check shortcut-ends-hints within labels-are 0
+check shortcut-still-acts within $M "$P" exists mako.omnibox
+$M "$P" key escape
+
+echo "== hints-keys-headed failed=$fails"
+exit "$fails"
