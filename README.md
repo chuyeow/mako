@@ -21,6 +21,8 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌃Tab / ⌃⇧Tab | Next / previous page in the sidebar |
 | ⌘1…⌘9 | Go to that trail's first page; again, to its last page, and back |
 | ⌘F, ⌘G / ⇧⌘G | Find in page, next / previous match |
+| F or ⌘J | Link hints: label every link and control in view; type a label to click it |
+| ⇧F or ⇧⌘J | Link hints for web links only; the chosen one opens beneath without leaving the page |
 | ⌘[ / ⌘] | Back / forward within a page |
 | ⌘R, ⌘= ⌘- ⌘0 | Reload, zoom |
 | ⌥⌘C | Developer console (Web Inspector) |

@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>Hints</title>
+<style>body{font:16px system-ui;margin:24px;line-height:2.2} .cover{position:relative;display:inline-block} .cover .lid{position:absolute;inset:0;background:#fff} .half .lid{position:absolute;top:0;bottom:0;left:40%;right:0;background:#fff}</style>
+<p><a href="two.html">Two</a> · <a href="three.html">Three</a></p>
+<p><button onclick="document.title = event.isTrusted ? 'pressed trusted' : 'pressed untrusted'">Press</button>
+   <input placeholder="Type here" onfocus="document.title = 'typing'" oninput="document.title = 'typed ' + this.value"></p>
+<p><a href="javascript:document.title='script link'">Script</a> · <a href="three.html" download>Save</a></p>
+<p><span class="half cover"><a href="three.html?half">Half covered link</a><span class="lid"></span></span>
+   <fieldset disabled style="display:inline;border:0;padding:0;margin:0"><button>Fenced</button></fieldset></p>
+<p><a href="two.html" style="display:none">Hidden</a> <button disabled>Disabled</button>
+   <span class="cover"><a href="two.html">Covered</a><span class="lid"></span></span></p>
+<div style="height:3000px"></div><a href="two.html">Below the fold</a>

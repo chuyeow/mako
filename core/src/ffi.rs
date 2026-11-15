@@ -3,7 +3,7 @@
 //! Returned strings are owned by the caller and must go back via `mako_free`.
 
 use crate::history::{self, History, Moment};
-use crate::{blocked, parse_config, resolve, set_setting, trails, Config};
+use crate::{blocked, hints, parse_config, resolve, set_setting, trails, Config};
 use std::ffi::{c_char, CStr, CString};
 
 unsafe fn text<'a>(p: *const c_char) -> &'a str {
@@ -48,6 +48,12 @@ pub extern "C" fn mako_trail_limit() -> u32 {
 #[no_mangle]
 pub extern "C" fn mako_set_setting(cfg: *const c_char, key: *const c_char, value: *const c_char) -> *mut c_char {
     out(Some(unsafe { set_setting(text(cfg), text(key), text(value)) }))
+}
+
+/// `count` link hint labels, one per line, in the order they are handed out.
+#[no_mangle]
+pub extern "C" fn mako_hint_labels(count: u32) -> *mut c_char {
+    out(Some(hints::labels(count as usize).join("\n")))
 }
 
 /// URL for omnibox input, or NULL for empty input.

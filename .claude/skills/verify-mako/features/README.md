@@ -39,6 +39,7 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 - [Page dialogs](./dialogs.md) covers `alert()`, `confirm()` and `prompt()` sheets, answering them, and silencing.
 - [Sign-in popups](./popups.md) covers OAuth-style popups, `window.opener`, `target=_blank` links, and the user agent.
 - [Navigation and zoom](./navigation.md) covers back, forward, reload, and zoom.
+- [Link hints](./link-hints.md) covers F and ⌘J labelling the links and controls in view, typing a label to click it, ⇧F and ⇧⌘J opening a link beneath, narrowing, Delete and Escape, and what ends hints.
 - [Page shortcuts](./page-shortcuts.md) covers which keys reach Mako and which reach web pages first.
 - [Developer console](./devtools.md) covers opening, using, and closing the Web Inspector.
 - [Accessibility tree](./accessibility.md) covers the handles and actions agents rely on.
