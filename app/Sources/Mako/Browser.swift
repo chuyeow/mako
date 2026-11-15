@@ -409,7 +409,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private func liveView(_ id: UInt64, url: String, title: String) -> WKWebView {
         if let view = views[id] { return view }
         let w = PageView(frame: .zero, configuration: webConfig)
-        w.onBackgroundLink = { [weak self] url in self?.openInBackground(beneath: id, url) }
+        w.onBackgroundLink = { [weak self] url in self?.openChild(beneath: id, url, inBackground: true) }
         w.navigationDelegate = self
         w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
@@ -427,10 +427,15 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         return w
     }
 
-    /// A middle-clicked or ⇧F link: a page beneath `parent` that starts loading now, behind
-    /// the shown page. WebKit starts no sound or video in a page that is not in a window, so
-    /// it stays quiet until it is first shown (`background-ax` checks).
-    private func openInBackground(beneath parent: UInt64, _ url: URL) {
+    /// Every page opened beneath another comes through here. In front, it is selected and
+    /// loads as it is shown. In the background (middle-click, ⌘-click, ⇧F) it starts loading
+    /// now, behind the shown page; WebKit starts no sound or video in a page that is not in a
+    /// window, so it stays quiet until it is first shown (`background-ax` checks).
+    private func openChild(beneath parent: UInt64, _ url: URL, inBackground: Bool) {
+        guard inBackground else {
+            apply("open_child", ["parent": parent, "url": url.absoluteString])
+            return
+        }
         let before = store.pages
         guard apply("open_child", ["parent": parent, "url": url.absoluteString, "select": false]) == nil,
               let id = store.pages.subtracting(before).first else { return }
@@ -505,7 +510,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func open(_ url: URL) {
         hideOmnibox()
         if apply("open_trail", ["url": url.absoluteString]) != nil, let parent = store.active?.id {
-            apply("open_child", ["parent": parent, "url": url.absoluteString])
+            openChild(beneath: parent, url, inBackground: false)
         }
     }
 
@@ -920,7 +925,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             if background || action.navigationType == .linkActivated {
                 log.info("child of \(parent) \(url.absoluteString, privacy: .public)\(background ? " (middle-click)" : "", privacy: .public)")
                 // ⌘-click opens the page beneath this one without leaving it.
-                apply("open_child", ["parent": parent, "url": url.absoluteString, "select": !(background || action.modifierFlags.contains(.command))])
+                openChild(beneath: parent, url, inBackground: background || action.modifierFlags.contains(.command))
                 return .cancel
             }
         }
@@ -1004,13 +1009,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
                  for action: WKNavigationAction, windowFeatures features: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url, isWeb(url), let parent = id(of: webView), (webView as? PageView)?.claimBackground() == true {
             log.info("child of \(parent) \(url.absoluteString, privacy: .public) (middle-click)")
-            openInBackground(beneath: parent, url)
+            openChild(beneath: parent, url, inBackground: true)
             return nil
         }
         guard action.navigationType != .linkActivated else {
             if let url = action.request.url {
                 if isWeb(url), let parent = id(of: webView) {
-                    apply("open_child", ["parent": parent, "url": url.absoluteString])
+                    openChild(beneath: parent, url, inBackground: false)
                 } else {
                     webView.load(action.request)
                 }
