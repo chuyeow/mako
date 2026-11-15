@@ -1,0 +1,19 @@
+<!doctype html>
+<title>Media opening</title>
+<!-- Silent sound three ways: autoplay, a script's play(), and Web Audio. The title says
+     whether any got to play. -->
+<audio id="a" src="silence.wav" autoplay loop></audio>
+<audio id="b" src="silence.wav" loop></audio>
+<script>
+  const playing = () => { document.title = "Media playing"; };
+  document.title = "Media loaded";
+  document.getElementById("a").addEventListener("playing", playing);
+  const b = document.getElementById("b");
+  b.addEventListener("playing", playing);
+  b.play().catch(() => {});
+  const ctx = new AudioContext();
+  const gain = ctx.createGain(); gain.gain.value = 0;
+  const osc = ctx.createOscillator(); osc.connect(gain).connect(ctx.destination); osc.start();
+  ctx.addEventListener("statechange", () => { if (ctx.state === "running") playing(); });
+  if (ctx.state === "running") playing();
+</script>
