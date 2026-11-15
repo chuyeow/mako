@@ -3,6 +3,7 @@
 
 mod ffi;
 pub mod hints;
+pub mod commands;
 pub mod history;
 pub mod trails;
 

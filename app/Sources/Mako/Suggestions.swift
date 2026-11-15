@@ -1,6 +1,43 @@
 import AppKit
 
-/// The rows under the omnibox field: open pages and history that match what is typed.
+/// One row under the omnibox field: a page to open or a command to run.
+struct OmniRow {
+    enum Badge { case open(slot: Int), keys(String) }
+    let title: String
+    /// Quieter text after the title: the address, or the menu a command sits in.
+    let detail: String
+    /// A template image (the globe) is drawn in ink; nil leaves the space empty.
+    let icon: NSImage?
+    let badge: Badge?
+    let tooltip: String?
+    let accessibilityLabel: String
+}
+
+extension OmniRow {
+    @MainActor init(_ suggestion: Suggestion, icon: NSImage?) {
+        self.init(title: suggestion.title, detail: Self.shown(suggestion.url), icon: icon ?? .globe,
+                  badge: suggestion.open.map { .open(slot: $0.color) }, tooltip: suggestion.url,
+                  accessibilityLabel: "\(suggestion.open == nil ? "History" : "Open page") – \(suggestion.url)")
+    }
+
+    @MainActor init(_ command: MenuCommand) {
+        let menus = command.path.joined(separator: " › ")
+        self.init(title: command.name, detail: menus, icon: command.item.image,
+                  badge: command.keys.isEmpty ? nil : .keys(command.keys), tooltip: nil,
+                  accessibilityLabel: "Command – \(menus)")
+    }
+
+    /// The address as a person reads it: no scheme, no `www.`, no lone trailing slash.
+    private static func shown(_ url: String) -> String {
+        var text = url.split(separator: "://", maxSplits: 1).last.map(String.init) ?? url
+        if text.hasPrefix("www.") { text.removeFirst(4) }
+        if text.hasSuffix("/"), text.firstIndex(of: "/") == text.index(before: text.endIndex) { text.removeLast() }
+        return text
+    }
+}
+
+/// The rows under the omnibox field: open pages and history that match what is typed, or
+/// the commands the palette offers.
 /// ↑ and ↓ select a row for Return; the pointer only tints the row under it, so a pointer
 /// resting where the list appears never changes what Return does.
 @MainActor
@@ -31,18 +68,18 @@ final class SuggestionList: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Shows `suggestions` with none selected; `icon` is each row's site icon, if one is held.
-    func show(_ suggestions: [Suggestion], icon: (Suggestion) -> NSImage?) {
+    /// Shows `items` with `selecting` selected, none by default.
+    func show(_ items: [OmniRow], selecting: Int? = nil) {
         rows.forEach { $0.removeFromSuperview() }
-        rows = suggestions.enumerated().map { index, suggestion in
-            let row = SuggestionRow(suggestion, index: index, icon: icon(suggestion))
+        rows = items.enumerated().map { index, item in
+            let row = SuggestionRow(item, index: index)
             row.slot = slot
             row.onPick = { [unowned self] in onPick(index, $0) }
             stack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
             return row
         }
-        selected = nil
+        selected = selecting.flatMap { rows.indices.contains($0) ? $0 : nil }
         isHidden = rows.isEmpty
         needsDisplay = true
     }
@@ -61,8 +98,8 @@ final class SuggestionList: NSView {
     }
 }
 
-/// One suggestion: the site's icon or a globe, the title, the address in a quieter ink, and
-/// for a page that is already open its trail's dot and "Open".
+/// One row: an icon, the title, its detail in a quieter ink, and a badge: for a page that is
+/// already open its trail's dot and "Open", for a command its shortcut.
 @MainActor
 private final class SuggestionRow: NSView {
     var onPick: (Bool) -> Void = { _ in }
@@ -75,16 +112,16 @@ private final class SuggestionRow: NSView {
     }
     private var hovered = false { didSet { needsDisplay = true } }
 
-    init(_ suggestion: Suggestion, index: Int, icon image: NSImage?) {
+    init(_ item: OmniRow, index: Int) {
         super.init(frame: .zero)
         let icon = NSImageView()
-        icon.image = image ?? .globe
-        icon.contentTintColor = image == nil ? .ink.withAlphaComponent(0.45) : nil
+        icon.image = item.icon
+        icon.contentTintColor = item.icon?.isTemplate == true ? .ink.withAlphaComponent(0.45) : nil
         icon.imageScaling = .scaleProportionallyUpOrDown
-        let title = NSTextField(labelWithString: suggestion.title)
+        let title = NSTextField(labelWithString: item.title)
         title.font = .systemFont(ofSize: 13, weight: .medium)
         title.textColor = .ink
-        let address = NSTextField(labelWithString: Self.shown(suggestion.url))
+        let address = NSTextField(labelWithString: item.detail)
         address.font = .systemFont(ofSize: 12)
         address.textColor = .ink.withAlphaComponent(0.55)
         for label in [title, address] {
@@ -95,7 +132,11 @@ private final class SuggestionRow: NSView {
         title.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         address.setContentHuggingPriority(.defaultLow, for: .horizontal)
         var views: [NSView] = [icon, title, address]
-        if let open = suggestion.open { views.append(OpenBadge(slot: open.color)) }
+        switch item.badge {
+        case .open(let slot): views.append(OpenBadge(slot: slot))
+        case .keys(let keys): views.append(KeysBadge(keys))
+        case nil: break
+        }
         for view in views {
             view.translatesAutoresizingMaskIntoConstraints = false
             view.setAccessibilityElement(false)
@@ -113,24 +154,16 @@ private final class SuggestionRow: NSView {
             last.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
         ] + views.map { $0.centerYAnchor.constraint(equalTo: centerYAnchor) })
         if last !== address { address.trailingAnchor.constraint(equalTo: last.leadingAnchor, constant: -12).isActive = true }
-        toolTip = suggestion.url
+        toolTip = item.tooltip
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityIdentifier("mako.omnibox.suggestion.\(index)")
-        setAccessibilityTitle(suggestion.title)
-        setAccessibilityLabel("\(suggestion.open == nil ? "History" : "Open page") – \(suggestion.url)")
+        setAccessibilityTitle(item.title)
+        setAccessibilityLabel(item.accessibilityLabel)
         setAccessibilityValue("")
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
-
-    /// The address as a person reads it: no scheme, no `www.`, no lone trailing slash.
-    private static func shown(_ url: String) -> String {
-        var text = url.split(separator: "://", maxSplits: 1).last.map(String.init) ?? url
-        if text.hasPrefix("www.") { text.removeFirst(4) }
-        if text.hasSuffix("/"), text.firstIndex(of: "/") == text.index(before: text.endIndex) { text.removeLast() }
-        return text
-    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard isSelected || hovered else { return }
@@ -184,4 +217,22 @@ private final class OpenBadge: NSView {
         text.addAttribute(.foregroundColor, value: NSColor.ink.withAlphaComponent(0.7), range: NSRange(location: 0, length: text.length))
         text.draw(at: NSPoint(x: 14, y: bounds.midY - text.size().height / 2))
     }
+}
+
+/// A command's shortcut, as the menu bar shows it.
+@MainActor
+private final class KeysBadge: NSTextField {
+    init(_ keys: String) {
+        super.init(frame: .zero)
+        stringValue = keys
+        isEditable = false
+        isBordered = false
+        drawsBackground = false
+        font = .systemFont(ofSize: 12)
+        textColor = .ink.withAlphaComponent(0.55)
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
 }

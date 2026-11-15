@@ -24,6 +24,10 @@ Rules for how Mako looks and behaves, each with its reason. Read this before bui
   Why: you should know which mode you're in before you type, without the cue pulling your eye.
   <!-- 2026-11-14: "make Cmd+F look different from entering a URL (subtly)"; 2026-11-15: "it's a more general principle to make [modes] obvious, but subtly" -->
 
+- **Every feature is a main-menu item, so ⌘K reaches it.** The command palette lists the menu bar, nothing else. A feature reachable only by pointer, a bare key or a context menu also gets a menu item; give it a shortcut only where it earns one. ⌘K goes to the page first, so sites keep their own palettes; a second ⌘K within a second is Mako's.
+  Why: every feature should be reachable from the command palette.
+  <!-- 2026-11-15: "every feature should be reachable from the command palette"; "I want pages to keep it. Make hitting cmd K a [second] time trigger mako's command palette in these pages" -->
+
 - **Link-hint labels never use F, and start with `qweasdzxc`.** `core/src/hints.rs` holds the alphabet and its tests enforce both.
   Why: hints are a one-handed operation; the other hand is usually on the mouse or not used. F starts hints, so it can't also pick one.
   <!-- 2026-11-15: "dont re-use F. prioritize these chars: qweasdzxc"; "so it can be a one-handed operation. the other hand [is] usually on the mouse or not used" -->

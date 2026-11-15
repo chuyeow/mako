@@ -13,6 +13,12 @@ char *mako_blocked(const char *config, const char *host, uint8_t weekday, uint16
 // Link hint labels for `count` targets, one per line; none is a prefix of another.
 char *mako_hint_labels(uint32_t count);
 
+// Command palette: a JSON array of indices into `commands` ([{"name", "path", "id"}]) matching `query`,
+// best first, lifted by `uses` (commands.json) at `now` (unix seconds). record returns the new
+// uses JSON after `id` ran, or NULL when nothing changed (no id, or remember_history = false).
+char *mako_rank_commands(const char *query, const char *commands, const char *uses, uint64_t now);
+char *mako_record_command(const char *config, const char *uses, const char *id, uint64_t now);
+
 // Trails (the page tree). Both return JSON: {"state": ..., "rows": [...], "pages": [ids]} or {"error": "..."}.
 // state is opaque to the caller: keep it, save it, pass it back. action: see core/src/trails.rs.
 char *mako_trails_load(const char *state);

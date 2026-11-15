@@ -11,7 +11,7 @@ enum Core {
         # Mako config – edits apply on the next navigation.
         max_trails = 3
         # restore_session = false   # start empty instead of reopening your trails
-        # remember_history = false  # keep no history; the address bar then suggests open pages only
+        # remember_history = false  # keep no history; the address bar then suggests open pages only, and ⌘K stops counting commands
         # search = https://duckduckgo.com/?q=%s
 
         # block <domain> [HH:MM-HH:MM] [mon-fri | sat,sun | weekdays | weekends | daily]

@@ -82,6 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Find Previous", #selector(Browser.findPrevious), "g", [.command, .shift]),
             ]),
             menu("View", [
+                item("Command Palette…", #selector(Browser.showCommands), "k"),
+                .separator(),
                 item("Reload", #selector(Browser.reload), "r"),
                 item("Zoom In", #selector(Browser.zoomIn), "="),
                 item("Zoom Out", #selector(Browser.zoomOut), "-"),

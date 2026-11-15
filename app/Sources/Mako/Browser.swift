@@ -58,8 +58,20 @@ final class MenuFirstWindow: NSWindow {
         ([.command, .control], "s"),
     ] + (1...9).map { (.command, String($0)) }
 
+    /// ⌘K goes to the page first, so sites keep their own command palettes; a page that
+    /// ignores it lets it through to Mako's. Pressed again within this many seconds, it is
+    /// Mako's whatever the page does.
+    static let secondPress: TimeInterval = 1
+    private var lastCommandK: TimeInterval?
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
+        if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "k", !event.isARepeat {
+            let second = lastCommandK.map { event.timestamp - $0 < Self.secondPress } ?? false
+            // After a second press the next one starts over, so a third goes to the page.
+            lastCommandK = second ? nil : event.timestamp
+            if second, NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        }
         // ⌃Tab / ⌃⇧Tab: menus match Tab unreliably, so route it here.
         if event.keyCode == 48, mods.subtracting(.shift) == .control {
             let action = mods.contains(.shift) ? #selector(Browser.previousPage) : #selector(Browser.nextPage)
@@ -83,7 +95,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// Pages kept loaded; the rest reload from their saved address when selected.
     static let maxLiveViews = 8
 
-    private enum OmniTarget { case current, newTrail, child(UInt64), find }
+    private enum OmniTarget {
+        case current, newTrail, child(UInt64), find, command
+        var isCommand: Bool { if case .command = self { true } else { false } }
+    }
+    /// What a row under the omnibox field offers.
+    private enum Choice { case suggestion(Suggestion), command(MenuCommand) }
     /// Hidden leaves only the page; the pointer at the window's left edge slides the sidebar
     /// over the page (peeking) until it leaves again.
     enum SidebarState { case shown, hidden, peeking }
@@ -147,10 +164,16 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         return editor
     }()
     private let suggestionList = SuggestionList()
-    private var suggestions: [Suggestion] = []
+    private var choices: [Choice] = []
+    /// The menu commands enabled when the palette opened; typing ranks these.
+    private var commands: [MenuCommand] = []
+    private let commandUses = CommandUses()
     private let hint = NSTextField(labelWithString: "")
     /// Holds the hint, so it lines up with the field inside the panel's narrower margins.
     private let hintRow = NSStackView()
+    /// What find looks for: kept apart from the field, which the other modes reuse, so ⌘G
+    /// and Find Next still mean the last search after an address or a command was typed.
+    private var findQuery = ""
     /// An error or message for the open omnibox; it goes when the omnibox next opens.
     private var omniMessage: String?
     private var omniboxOpen: Bool { !omniLayer.isHidden }
@@ -209,7 +232,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onOpenConfig = { [unowned self] in openConfig(nil) }
         favicons.onChange = { [unowned self] in
             sidebar.refreshIcons()
-            if !suggestions.isEmpty { showSuggestions() }
+            if case .suggestion = choices.first { showSuggestions() }
         }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
         container.onUnhandledKey = { [unowned self] in hintKey($0) }
@@ -478,6 +501,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
                                 ("Rename Page…", #selector(renamePage(_:)))] {
             trailsMenu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
+        // Only a page with pages beneath it has anything to fold.
+        if let active = store.rows.first(where: \.active), active.hasChildren {
+            let title = active.collapsed ? "Expand Page" : "Collapse Page"
+            trailsMenu.addItem(withTitle: title, action: #selector(toggleActivePage(_:)), keyEquivalent: "").target = self
+        }
         trailsMenu.addItem(.separator())
         var trail = 0
         for row in store.rows {
@@ -556,7 +584,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         hintRow.addArrangedSubview(hint)
         hintRow.edgeInsets = line.edgeInsets
         suggestionList.onPick = { [unowned self] index, beside in
-            if suggestions.indices.contains(index) { pick(suggestions[index], beside: beside) }
+            if choices.indices.contains(index) { pick(choices[index], beside: beside) }
         }
         suggestionList.isHidden = true
         let stack = NSStackView(views: [line, suggestionList, hintRow])
@@ -617,6 +645,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         case .newTrail: "New trail – search or enter address"
         case .child: "New page beneath this one – search or enter address"
         case .find: "Find in this page"
+        case .command: "Run a command – type part of any menu command"
         }
         field.setAccessibilityLabel(purpose)
         let look = look(for: target)
@@ -624,14 +653,18 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         glyph.look = look
         corner.pickAtRandom()
         scrim.dims = blank.isHidden
-        field.placeholderString = look == .find ? "Find in page" : "Search or enter address"
+        field.placeholderString = switch look {
+        case .find: "Find in page"
+        case .command: "Run a command"
+        default: "Search or enter address"
+        }
         let accent = look.slot.map(NSColor.trail) ?? .ink
         omniEditor.insertionPointColor = accent
         omniEditor.selectedTextAttributes = [.backgroundColor: accent.withAlphaComponent(0.3), .foregroundColor: NSColor.ink]
         omniMessage = nil
         updateHint()
         suggestionList.slot = look.slot
-        suggest(nil)
+        suggest(target.isCommand ? "" : nil)
         omniLayer.isHidden = false
         window.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
@@ -647,6 +680,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         case .newTrail: .newTrail(store.nextColor)
         case .child(let parent): .child(store.rows.first { $0.id == parent }?.color ?? store.nextColor)
         case .find: .find
+        case .command: .command
         }
     }
 
@@ -657,14 +691,18 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func controlTextDidChange(_ note: Notification) {
         guard note.object as? NSTextField === field else { return }
         field.fitFont()
+        if case .find = omniTarget { findQuery = field.stringValue }
         suggest(field.stringValue)
     }
 
-    /// Asks the core for rows matching `query` and shows them with none selected. The rows
-    /// appear once something is typed, never on opening, and never for find.
+    /// Asks the core for rows matching `query` and shows them. Pages and history appear once
+    /// something is typed, with none selected, and never for find; commands appear on opening,
+    /// the best match selected so Return runs it.
     private func suggest(_ query: String?) {
-        if case .find = omniTarget { suggestions = [] } else {
-            suggestions = query.map { history.suggestions(for: $0, trails: store.state) } ?? []
+        switch omniTarget {
+        case .find: choices = []
+        case .command: choices = MenuCommand.rank(query ?? "", commands, uses: commandUses).map(Choice.command)
+        default: choices = (query.map { history.suggestions(for: $0, trails: store.state) } ?? []).map(Choice.suggestion)
         }
         showSuggestions()
     }
@@ -673,8 +711,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // Only the rows that fit above the window's bottom edge; a short window shows fewer.
         // Below the panel's 80 pt offset: the field line (about 70 pt) and a 24 pt margin.
         let room = container.bounds.height - 80 - 70 - 24
-        suggestions = Array(suggestions.prefix(max(1, Int(room / 32))))
-        suggestionList.show(suggestions) { [favicons] in favicons.known(for: $0.url) }
+        choices = Array(choices.prefix(max(1, Int(room / 32))))
+        let rows = choices.map { choice in
+            switch choice {
+            case .suggestion(let s): OmniRow(s, icon: favicons.known(for: s.url))
+            case .command(let c): OmniRow(c)
+            }
+        }
+        suggestionList.show(rows, selecting: omniTarget.isCommand ? 0 : nil)
     }
 
     /// The status line shows only an error or message: the omnibox's own, else the config's.
@@ -696,8 +740,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         case #selector(NSResponder.cancelOperation(_:)): hideOmnibox()
         // ⌥Return, which a field would otherwise take as a literal newline.
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): enter(beside: true)
-        case #selector(NSResponder.moveDown(_:)) where !suggestions.isEmpty: suggestionList.move(by: 1)
-        case #selector(NSResponder.moveUp(_:)) where !suggestions.isEmpty: suggestionList.move(by: -1)
+        case #selector(NSResponder.moveDown(_:)) where !choices.isEmpty: suggestionList.move(by: 1)
+        case #selector(NSResponder.moveUp(_:)) where !choices.isEmpty: suggestionList.move(by: -1)
         default: return false
         }
         return true
@@ -709,15 +753,31 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private func enter(beside: Bool) {
         guard omniboxOpen else { return }
         if case .find = omniTarget { return findNext(nil) }
-        if let row = suggestionList.selected, suggestions.indices.contains(row) { return pick(suggestions[row], beside: beside) }
+        if let row = suggestionList.selected, choices.indices.contains(row) { return pick(choices[row], beside: beside) }
+        if omniTarget.isCommand { return choices.first.map { pick($0, beside: beside) } ?? NSSound.beep() }
         guard let url = Core.resolve(field.stringValue) else { return hideOmnibox() }
         go(to: url, beside: beside)
     }
 
-    /// A suggestion was chosen. A page that is already open is shown, whatever the omnibox was
-    /// opened for; an address from history goes where the same address typed would.
-    private func pick(_ suggestion: Suggestion, beside: Bool) {
+    private func pick(_ choice: Choice, beside: Bool) {
         guard omniboxOpen else { return }
+        switch choice {
+        case .command(let command): run(command)
+        case .suggestion(let suggestion): pick(suggestion, beside: beside)
+        }
+    }
+
+    /// Closes the omnibox first, so a command that opens it again (New Trail) can.
+    private func run(_ command: MenuCommand) {
+        hideOmnibox()
+        log.info("command \(command.path.joined(separator: " › "), privacy: .public) › \(command.name, privacy: .public)")
+        commandUses.ran(command)
+        command.perform()
+    }
+
+    /// A page that is already open is shown, whatever the omnibox was opened for; an address
+    /// from history goes where the same address typed would.
+    private func pick(_ suggestion: Suggestion, beside: Bool) {
         if let open = suggestion.open {
             hideOmnibox()
             return select(open.id)
@@ -742,7 +802,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             error = store.apply("open_trail", ["url": url.absoluteString])
         case .child(let parent):
             error = store.apply("open_child", ["parent": parent, "url": url.absoluteString])
-        case .find: break
+        case .find, .command: break
         }
         if let error {
             NSSound.beep()
@@ -813,14 +873,22 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         }
     }
 
-    @objc func findInPage(_: Any?) { showOmnibox(for: .find, text: field.stringValue) }
+    /// ⌘K: every enabled menu command, from the omnibox. They are read before the omnibox
+    /// takes focus, so Copy or Select All mean the page.
+    @objc func showCommands(_: Any?) {
+        hideOmnibox()
+        commands = NSApp.mainMenu.map { MenuCommand.all(in: $0) } ?? []
+        showOmnibox(for: .command)
+    }
+
+    @objc func findInPage(_: Any?) { showOmnibox(for: .find, text: findQuery) }
     @objc func findNext(_: Any?) { find(backwards: false) }
     @objc func findPrevious(_: Any?) { find(backwards: true) }
     private func find(backwards: Bool) {
-        guard let shown, !field.stringValue.isEmpty else { return }
+        guard let shown, !findQuery.isEmpty else { return }
         let config = WKFindConfiguration()
         config.backwards = backwards
-        shown.find(field.stringValue, configuration: config) { [weak self] result in
+        shown.find(findQuery, configuration: config) { [weak self] result in
             self?.omniMessage = result.matchFound ? nil : "Not found"
             self?.updateHint()
         }
@@ -840,6 +908,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         if sidebarState == .hidden { setSidebar(.shown) }
         window.contentView?.layoutSubtreeIfNeeded()
         sidebar.beginRename(id)
+    }
+
+    @objc func toggleActivePage(_: Any?) {
+        if let id = store.active?.id { toggle(id) }
     }
 
     @objc func selectMenuRow(_ sender: NSMenuItem) { select(UInt64(sender.tag)) }
@@ -1203,12 +1275,12 @@ final class Scrim: NSView {
 /// What the omnibox looks like: the trail Enter lands in, and how (a new trail, this page, a
 /// page beneath it), or find, which belongs to no trail.
 enum OmniLook: Equatable {
-    case newTrail(Int), page(Int), child(Int), find
+    case newTrail(Int), page(Int), child(Int), find, command
 
     var slot: Int? {
         switch self {
         case .newTrail(let slot), .page(let slot), .child(let slot): slot
-        case .find: nil
+        case .find, .command: nil
         }
     }
 }
@@ -1340,7 +1412,7 @@ final class OmniCard: NSView {
 
 /// Leads the omnibox field with where Enter lands, drawn as the sidebar draws it: a trail's
 /// root dot for a new trail, a plain dot for this page, a branch for a page beneath. Find
-/// gets a magnifying glass.
+/// gets a magnifying glass, the command palette a prompt's chevron.
 @MainActor
 final class OmniGlyph: NSView {
     var look = OmniLook.find { didSet { needsDisplay = true } }
@@ -1376,6 +1448,16 @@ final class OmniGlyph: NSView {
             glass.lineCapStyle = .round
             NSColor.ink.withAlphaComponent(0.6).setStroke()
             glass.stroke()
+        case .command:
+            let chevron = NSBezierPath()
+            chevron.move(to: NSPoint(x: mid.x - 3.5, y: mid.y + 5.5))
+            chevron.line(to: NSPoint(x: mid.x + 2.5, y: mid.y))
+            chevron.line(to: NSPoint(x: mid.x - 3.5, y: mid.y - 5.5))
+            chevron.lineWidth = 1.75
+            chevron.lineCapStyle = .round
+            chevron.lineJoinStyle = .round
+            NSColor.ink.withAlphaComponent(0.6).setStroke()
+            chevron.stroke()
         }
     }
 }

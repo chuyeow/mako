@@ -1,0 +1,150 @@
+#!/bin/bash
+# The command palette: View → Command Palette… (⌘K) opens the omnibox listing menu commands.
+# Every menu item that can be chosen is found by typing its name, and Return runs the
+# selected one as its menu would. Accessibility actions only, no focus.
+# Prints PASS/FAIL per check; exit status is the number of failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/commands-ax"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+E="$MAKO_RUN/evidence"
+fails=0; srv=
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then echo "PASS $name"; else echo "FAIL $name"; fails=$((fails + 1)); fi; }
+within() { for _ in $(seq 40); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+gone() { $M "$P" exists "$1"; test $? = 4; }
+trap '$C stop >/dev/null 2>&1; [ -n "$srv" ] && { kill $srv 2>/dev/null; wait $srv 2>/dev/null; }' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+mkdir -p "$E"
+port=$((20000 + RANDOM % 20000)); U="http://127.0.0.1:$port"
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/omnibox >/dev/null 2>&1 &
+srv=$!; sleep 1
+out=$($C launch "" "$U/one.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid)
+J="$MAKO_RUN/state/trails.json"
+within $M "$P" exists mako.page
+sleep 1
+
+palette() { $M "$P" menu View "Command Palette…"; within $M "$P" exists mako.omnibox.field; }
+# rows: the titles of the rows under the field, in order
+rows() { $M "$P" tree 30 | sed -n 's/.*id="mako\.omnibox\.suggestion\.[0-9]*" title="\([^"]*\)".*/\1/p'; }
+type_in() { $M "$P" set mako.omnibox.field "$1"; sleep 0.2; }
+is() { python3 -c "import json, sys; s = json.load(open('$J')); n = s['nodes']; sys.exit(0 if ($1) == $2 else 1)"; }
+
+echo "== opening"
+palette
+$M "$P" tree 30 > "$E/palette-tree.txt"
+$M "$P" shot "$E/palette.png" >/dev/null 2>&1
+check opens-in-command-mode grep -q 'id="mako.omnibox.field".*desc="Run a command' "$E/palette-tree.txt"
+check placeholder-says-so grep -q 'placeholder="Run a command"' "$E/palette-tree.txt"
+check lists-commands-on-opening $M "$P" exists mako.omnibox.suggestion.0
+check first-row-selected test "$($M "$P" value mako.omnibox.suggestion.0)" = selected
+check rows-name-their-menu grep -q 'desc="Command – ' "$E/palette-tree.txt"
+type_in "command palette"
+check not-itself sh -c "! $M $P exists mako.omnibox.suggestion.0"
+type_in "zoom sideways"
+check no-match-no-rows sh -c "! $M $P exists mako.omnibox.suggestion.0"
+type_in "zo in"
+check words-match-word-starts test "$(rows | head -1)" = "Zoom In"
+$M "$P" shot "$E/palette-zoom.png" >/dev/null 2>&1
+$M "$P" press-id mako.omnibox.scrim
+check scrim-closes within gone mako.omnibox
+
+echo "== every menu command is in it"
+# Read before the palette opens: the palette lists what can be chosen with the page in front.
+: > "$E/menu-commands.txt"
+for menu in Mako File Edit View History Trails; do
+  # AutoFill is a submenu AppKit adds to Edit; its own items are what the palette lists.
+  $M "$P" menu-items "$menu" --enabled | sed 's/^..//' | grep -v -x -e '' -e 'Command Palette…' -e 'AutoFill' |
+    sed "s|^|$menu	|" >> "$E/menu-commands.txt"
+done
+palette
+: > "$E/missing.txt"
+while IFS=$'\t' read -r menu name; do
+  type_in "$name"
+  rows | grep -q -x -F "$name" || echo "$menu › $name" >> "$E/missing.txt"
+done < "$E/menu-commands.txt"
+echo "$(grep -c . "$E/menu-commands.txt") menu commands, $(grep -c . "$E/missing.txt") missing" > "$E/coverage.txt"
+check menu-commands-read test "$(grep -c . "$E/menu-commands.txt")" -ge 30
+check every-menu-command-found test ! -s "$E/missing.txt"
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+
+echo "== find keeps its own query"
+$M "$P" menu Edit "Find…"; within $M "$P" exists mako.omnibox.field
+$M "$P" set mako.omnibox.field "still"; $M "$P" confirm mako.omnibox.field
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+palette; type_in "find next"; $M "$P" confirm mako.omnibox.field; within gone mako.omnibox
+$M "$P" menu Edit "Find…"; within $M "$P" exists mako.omnibox.field
+check find-query-survives-the-palette test "$($M "$P" value mako.omnibox.field)" = still
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+
+echo "== running them"
+palette; type_in "new trail"; $M "$P" confirm mako.omnibox.field
+check runs-new-trail within sh -c "$M $P tree 30 | grep -q 'id=\"mako.omnibox.field\".*desc=\"New trail'"
+$M "$P" set mako.omnibox.field "$U/two.html"; $M "$P" confirm mako.omnibox.field
+check new-trail-opened within is 'len(s["roots"])' 2
+palette; type_in "hide sidebar"; $M "$P" confirm mako.omnibox.field
+check runs-hide-sidebar within sh -c "$M $P menu-items View | grep -q -x '  Show Sidebar'"
+palette; type_in "show sidebar"; $M "$P" confirm mako.omnibox.field
+check runs-show-sidebar within sh -c "$M $P menu-items View | grep -q -x '  Hide Sidebar'"
+first=$(python3 -c "import json; print(json.load(open('$J'))['roots'][0])")
+palette; type_in "page one"; $M "$P" confirm mako.omnibox.field
+check a-page-name-selects-it within is 's["active"]' "$first"
+palette; type_in "new page in"; $M "$P" confirm mako.omnibox.field
+$M "$P" set mako.omnibox.field "$U/three.html"; $M "$P" confirm mako.omnibox.field
+check runs-new-page-in-trail within is 'len(n)' 3
+cp "$J" "$E/before-page-one.json"
+palette; type_in "page one"; $M "$P" tree 30 > "$E/page-one-tree.txt"; $M "$P" confirm mako.omnibox.field
+check back-to-the-root within is 's["active"]' "$first"
+$M "$P" menu-items Trails > "$E/trails-menu.txt"
+palette; type_in "collapse"; $M "$P" confirm mako.omnibox.field
+check runs-collapse within is "n['$first'].get('collapsed', False)" True
+palette; type_in "expand"; $M "$P" confirm mako.omnibox.field
+check runs-expand within is "n['$first'].get('collapsed', False)" False
+palette; type_in "rename"; $M "$P" confirm mako.omnibox.field
+check runs-rename within $M "$P" exists "mako.trail.$first.name"
+$M "$P" set "mako.trail.$first.name" "Mine"; $M "$P" confirm "mako.trail.$first.name"
+check rename-saved within is "n['$first'].get('name')" "'Mine'"
+$M "$P" shot "$E/after-rename.png" >/dev/null 2>&1
+
+echo "== a page changing the Trails menu while it is open"
+palette; type_in "new trail"; $M "$P" confirm mako.omnibox.field
+$M "$P" set mako.omnibox.field "$U/late-title.html"; $M "$P" confirm mako.omnibox.field
+within is 'len(s["roots"])' 3
+# The first page was renamed Mine above.
+palette; type_in "mine"; sleep 2.5
+check retitled-while-open within sh -c "$M $P menu-items Trails | grep -q 'Late title, settled'"
+$M "$P" confirm mako.omnibox.field
+check still-runs-the-pick within is 's["active"]' "$first"
+
+echo "== often and lately used rise"
+U2="$MAKO_RUN/state/commands.json"
+runs() { python3 -c "import json, sys; u = {c['id']: c['runs'] for c in json.load(open('$U2'))['commands']}; print(u.get(sys.argv[1], 0))" "$1"; }
+for _ in 1 2 3 4; do palette; type_in "zoom out"; $M "$P" confirm mako.omnibox.field; within gone mako.omnibox; done
+check runs-are-counted-by-action test "$(runs zoomOut:)" = 4
+check a-title-change-keeps-one-count test "$(runs toggleSidebar:)" = 2
+check pages-are-not-counted python3 -c "import json, sys; ids = [c['id'] for c in json.load(open('$U2'))['commands']]; sys.exit(any(i in ('', 'selectMenuRow:', 'jumpToTrail:') for i in ids))"
+palette
+check most-used-first-on-opening test "$(rows | head -1)" = "Zoom Out"
+type_in "zoom"
+check most-used-first-among-matches test "$(rows | head -2 | tr '\n' ,)" = "Zoom Out,Zoom In,"
+$M "$P" shot "$E/palette-most-used.png" >/dev/null 2>&1
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+P_BEFORE=$P
+$C relaunch >/dev/null 2>&1; P=$($C pid); within $M "$P" exists mako.page; sleep 1
+palette
+check kept-across-a-relaunch test "$(rows | head -1)" = "Zoom Out"
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+printf 'max_trails = 3\nremember_history = false\n' > "$MAKO_RUN/state/config"; sleep 0.5
+palette; type_in "zoom in"; $M "$P" confirm mako.omnibox.field; within gone mako.omnibox
+check nothing-counted-with-history-off test "$(runs zoomIn:)" = 0
+
+sleep 1
+log show --info --last 10m --predicate "(processID == $P OR processID == $P_BEFORE) AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null |
+  sed -n 's/.*command \(.* › .*\)$/\1/p' > "$E/commands-run.txt"
+check each-run-logged test "$(grep -c . "$E/commands-run.txt")" -ge 12
+check log-names-the-menu grep -q -x 'View › Hide Sidebar' "$E/commands-run.txt"
+
+echo "== $fails failure(s)"
+exit "$fails"

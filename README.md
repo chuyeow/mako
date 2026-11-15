@@ -16,6 +16,7 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌘N | Blank page: every trail stays, the address bar opens for a new one |
 | ⌘T | New trail (refused at the cap; default 3, set in Settings) |
 | ⌥⌘T | New page beneath the current one |
+| ⌘K | Command palette: every menu command, by typing part of its name, the ones you run often or lately first. On a site with its own ⌘K (GitHub, Slack), press it twice |
 | ⌘L | Omnibox: load an address in the current page (one line; long addresses shrink to fit) |
 | ↓ / ↑, Return | In the omnibox: select a suggestion (an open page or one from history) and go to it; Return with none selected loads what you typed |
 | ⌘W / ⇧⌘T | Close page (with the pages beneath it) / reopen closed page |
@@ -34,7 +35,7 @@ Clicking a link opens it as a new page beneath the current one; ⌘-click or mid
 
 As you type in the omnibox (⌘L, ⌘T, ⌥⌘T) it suggests up to eight pages: ones already open in a trail first, marked with their trail's dot and Open, then pages from your history, ranked by how well they match and how often and how recently you visited them. Picking an open page takes you to it instead of loading it twice; picking a history page loads it where the same address typed would go. Nothing is filled in for you, and no suggestion comes from the network. History is kept in `history.json` beside the config and never leaves the Mac; History → Clear History… empties it, and `remember_history = false` keeps none.
 
-Mako's own shortcuts (⌘N ⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘1…⌘9 ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
+Mako's own shortcuts (⌘N ⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘1…⌘9 ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z and sites keep their own ⌘K; a second ⌘K within a second is Mako's.
 
 ## Icon
 

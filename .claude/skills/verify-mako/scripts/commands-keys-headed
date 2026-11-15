@@ -1,0 +1,56 @@
+#!/bin/bash
+# ⌘K with real keys: a page that claims ⌘K (fixtures/omnibox/claims-cmd-k.html, as GitHub
+# or Slack) gets it, one press at a time; a second ⌘K within a second opens Mako's command
+# palette instead, and a third goes back to the page. On a page that ignores ⌘K the first
+# press opens the palette.
+# Headed: takes keyboard focus, but sends no pointer events, so it also runs over a remote
+# session such as Jump Desktop. Warn the person first. Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+unset MAKO_BACKGROUND
+export MAKO_RUN="$PWD/verify-runs/commands-keys-headed"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+fails=0; P=
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then echo "PASS $name"; else echo "FAIL $name (title: $($M "$P" title))"; fails=$((fails + 1)); fi; }
+within() { for _ in $(seq 30); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+gone() { $M "$P" exists "$1"; test $? = 4; }
+titled() { test "$($M "$P" title)" = "$1"; }
+palette_open() { $M "$P" tree 30 | grep -q 'id="mako.omnibox.field".*desc="Run a command'; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/omnibox >/dev/null 2>&1 &
+srv=$!; sleep 1
+U="http://127.0.0.1:$port"
+out=$($C launch "" "$U/claims-cmd-k.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); sleep 3
+
+echo "== a page that claims ⌘K keeps it"
+$M "$P" key cmd+k
+check page-gets-the-first-press within titled "Claims K 1"
+check no-palette-on-the-first-press gone mako.omnibox
+sleep 1.5; $M "$P" key cmd+k
+check presses-a-second-apart-both-go-to-the-page within titled "Claims K 2"
+check still-no-palette gone mako.omnibox
+
+echo "== a second ⌘K within a second is Mako's"
+sleep 1.5; $M "$P" key cmd+k; $M "$P" key cmd+k
+check second-press-opens-the-palette within palette_open
+check page-got-only-the-first within titled "Claims K 3"
+$M "$P" key escape
+check escape-closes-it within gone mako.omnibox
+$M "$P" key cmd+k
+check a-third-press-goes-to-the-page within titled "Claims K 4"
+check no-palette-on-the-third gone mako.omnibox
+
+echo "== a page that ignores ⌘K lets the first press through"
+sleep 1.5; $M "$P" key cmd+l; sleep 0.3; $M "$P" type "$U/one.html"; $M "$P" key return
+within titled "Page one"; sleep 1.5
+$M "$P" key cmd+k
+check first-press-opens-the-palette within palette_open
+$M "$P" key escape
+
+echo "== $fails failure(s)"
+exit "$fails"
