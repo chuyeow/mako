@@ -3,7 +3,7 @@
 //! Returned strings are owned by the caller and must go back via `mako_free`.
 
 use crate::history::{self, History, Moment};
-use crate::{blocked, hints, parse_config, resolve, set_setting, trails, Config};
+use crate::{blocked, commands, hints, parse_config, resolve, set_setting, trails, Config};
 use std::ffi::{c_char, CStr, CString};
 
 unsafe fn text<'a>(p: *const c_char) -> &'a str {
@@ -54,6 +54,14 @@ pub extern "C" fn mako_set_setting(cfg: *const c_char, key: *const c_char, value
 #[no_mangle]
 pub extern "C" fn mako_hint_labels(count: u32) -> *mut c_char {
     out(Some(hints::labels(count as usize).join("\n")))
+}
+
+/// The command palette's rows for `query`: a JSON array of indices into `commands`, a JSON
+/// array of `{"name", "path"}`, best first. Unreadable commands match nothing.
+#[no_mangle]
+pub extern "C" fn mako_rank_commands(query: *const c_char, commands: *const c_char) -> *mut c_char {
+    let list: Vec<commands::Command> = serde_json::from_str(unsafe { text(commands) }).unwrap_or_default();
+    out(Some(serde_json::json!(commands::rank(unsafe { text(query) }, &list)).to_string()))
 }
 
 /// URL for omnibox input, or NULL for empty input.
