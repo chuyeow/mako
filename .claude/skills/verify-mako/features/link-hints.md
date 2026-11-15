@@ -6,7 +6,7 @@ Press F on a page and every link and control in view gets a short label, in the 
 
 - `hints-show` F or ⌘J labels exactly the links and controls in view: not hidden, disabled (a disabled `<fieldset>` included), covered or scrolled-out ones. A partly covered link is labelled, and its label clicks the part that shows.
 - `hints-follow` typing a label, or pressing its label through AX, clicks the element with a real, trusted click.
-- `hints-beneath` ⇧F or ⇧⌘J labels only web links (not `javascript:` or download links) and opens the chosen one beneath, staying on the page.
+- `hints-beneath` ⇧F or ⇧⌘J labels only web links (not `javascript:` or download links) and opens the chosen one beneath, staying on the page; it loads at once, quietly, as a middle-clicked link does.
 - `hints-narrow` the first letter of a two-letter label hides the labels that do not start with it; Delete takes a letter back; a letter no label has beeps and changes nothing.
 - `hints-end` Escape, a shortcut (which then acts), a scroll, a click anywhere but a label, opening the address bar, switching pages and any resize of the page (Hide Sidebar, window resize) end hints. A key typed after a menu focused another field (Rename Page…) ends hints and goes to that field. A page with nothing to label beeps.
 - `hints-keys` F in a text field types; a page that handles F keeps it; ⌘J labels anyway.
