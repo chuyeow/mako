@@ -97,6 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .separator(),
                 item("Jump to Link…", #selector(Browser.jumpToLink), "j"),
                 item("Open Link Beneath…", #selector(Browser.openLinkBeneath), "j", [.command, .shift]),
+                .separator(),
+                item("Clear History…", #selector(Browser.clearHistory), ""),
             ]),
             trails,
         ].forEach(main.addItem)
