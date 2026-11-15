@@ -606,6 +606,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         card.look = look
         glyph.look = look
         corner.pickAtRandom()
+        scrim.dims = blank.isHidden
         field.placeholderString = look == .find ? "Find in page" : "Search or enter address"
         let accent = look.slot.map(NSColor.trail) ?? .ink
         omniEditor.insertionPointColor = accent
@@ -1146,6 +1147,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 @MainActor
 final class Scrim: NSView {
     var onDismiss: () -> Void = {}
+    /// Off over the blank page: there is nothing to dim, and the painting stays as it is.
+    var dims = true { didSet { needsDisplay = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1158,6 +1161,7 @@ final class Scrim: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard dims else { return }
         NSColor.scrim.setFill()
         dirtyRect.intersection(bounds).fill()
     }
