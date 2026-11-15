@@ -13,6 +13,7 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 
 | Key | Action |
 | --- | --- |
+| ⌘N | Blank page: every trail stays, the address bar opens for a new one |
 | ⌘T | New trail (refused at the cap; default 3, set in Settings) |
 | ⌥⌘T | New page beneath the current one |
 | ⌘L | Omnibox: load an address in the current page (one line; long addresses shrink to fit) |
@@ -33,7 +34,7 @@ Clicking a link opens it as a new page beneath the current one; ⌘-click or mid
 
 As you type in the omnibox (⌘L, ⌘T, ⌥⌘T) it suggests up to eight pages: ones already open in a trail first, marked with their trail's dot and Open, then pages from your history, ranked by how well they match and how often and how recently you visited them. Picking an open page takes you to it instead of loading it twice; picking a history page loads it where the same address typed would go. Nothing is filled in for you, and no suggestion comes from the network. History is kept in `history.json` beside the config and never leaves the Mac; History → Clear History… empties it, and `remember_history = false` keeps none.
 
-Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘1…⌘9 ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
+Mako's own shortcuts (⌘N ⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘1…⌘9 ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
 
 ## Icon
 

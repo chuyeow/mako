@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Quit Mako", #selector(NSApplication.terminate), "q"),
             ]),
             menu("File", [
+                item("New Blank Page", #selector(Browser.newBlankPage), "n"),
                 item("New Trail", #selector(Browser.newTrail), "t"),
                 item("New Page in Trail", #selector(Browser.newPage), "t", [.command, .option]),
                 item("Open Location…", #selector(Browser.openLocation), "l"),
