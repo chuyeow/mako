@@ -854,8 +854,16 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // ⌘W in the About panel or a sign-in popup closes that window, not a page behind it.
         if let key = NSApp.keyWindow, key !== window { return key.performClose(nil) }
         Perf.measure("closePage")
-        guard let id = store.active?.id else { return NSSound.beep() }
+        guard let id = store.active?.id else { return leaveBlankPage() }
         close(id)
+    }
+
+    /// ⌘W on the blank page: back to the page shown before it, else the first trail's root
+    /// (nothing was shown since launch). With no page at all there is nowhere to go.
+    private func leaveBlankPage() {
+        hideOmnibox()
+        if let last = recency.last(where: store.pages.contains) { return select(last) }
+        if apply("jump", ["trail": 0]) != nil { NSSound.beep() }
     }
 
     private func close(_ id: UInt64) {

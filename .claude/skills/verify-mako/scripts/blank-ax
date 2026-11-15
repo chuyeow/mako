@@ -1,7 +1,8 @@
 #!/bin/bash
 # The blank page's art: each time the blank page shows (no page open), a background is
 # picked at random from the ten, and a page opening hides it. Accessibility actions only,
-# no focus. File → New Blank Page (⌘N) brings it up with the trails kept.
+# no focus. File → New Blank Page (⌘N) brings it up with the trails kept; Close Page (⌘W)
+# there goes back to the page shown before.
 # Prints PASS/FAIL per check; exit status is the number of failures.
 set -u
 cd "$(dirname "$0")/../../../.."
@@ -64,6 +65,11 @@ check address-bar-over-blank-page-does-not-dim undimmed
 root=$(python3 -c "import json; print(json.load(open('$J'))['roots'][0])")
 $M "$P" press-id "mako.trail.$root"
 check a-row-brings-its-page-back within sh -c "$M $P exists mako.trail.$root.page && ! $M $P exists mako.blank"
+$M "$P" menu File "New Blank Page"
+within $M "$P" exists mako.blank && shown=$((shown + 1))
+$M "$P" menu File "Close Page"
+check close-page-on-blank-goes-back within sh -c "$M $P exists mako.trail.$root.page && ! $M $P exists mako.blank && ! $M $P exists mako.omnibox"
+check close-page-on-blank-closes-no-page python3 -c "import json, sys; sys.exit(0 if len(json.load(open('$J'))['nodes']) == 1 else 1)"
 sleep 1
 log show --info --last 10m --predicate "processID == $P AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null |
   sed -n 's/.*blank art \(.*\)$/\1/p' > "$E/backgrounds.txt"
