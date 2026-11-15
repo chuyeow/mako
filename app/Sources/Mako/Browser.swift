@@ -54,12 +54,24 @@ let log = Logger(subsystem: "com.wego.mako", category: "browser")
 final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
         (.command, "n"), (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
-        (.command, "w"), (.command, "l"), (.command, "k"), (.command, ","), (.command, "."), ([.command, .option], "c"),
+        (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
         ([.command, .control], "s"),
     ] + (1...9).map { (.command, String($0)) }
 
+    /// ⌘K goes to the page first, so sites keep their own command palettes; a page that
+    /// ignores it lets it through to Mako's. Pressed again within this many seconds, it is
+    /// Mako's whatever the page does.
+    static let secondPress: TimeInterval = 1
+    private var lastCommandK: TimeInterval?
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
+        if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "k", !event.isARepeat {
+            let second = lastCommandK.map { event.timestamp - $0 < Self.secondPress } ?? false
+            // After a second press the next one starts over, so a third goes to the page.
+            lastCommandK = second ? nil : event.timestamp
+            if second, NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        }
         // ⌃Tab / ⌃⇧Tab: menus match Tab unreliably, so route it here.
         if event.keyCode == 48, mods.subtracting(.shift) == .control {
             let action = mods.contains(.shift) ? #selector(Browser.previousPage) : #selector(Browser.nextPage)
