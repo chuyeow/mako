@@ -1,11 +1,12 @@
 //! Link hint labels: the letters typed to pick one of the page's links without the pointer.
 
-/// Home row first, as in Vimium, so most labels sit under the resting fingers.
-pub const ALPHABET: &str = "sadfjklewcmpgh";
+/// The left hand's nine letters first, then the rest of the left hand, so the right hand
+/// can stay on the pointer. Never F: it starts hints, and typing it again picks nothing.
+pub const ALPHABET: &str = "qweasdzxcrtgvb";
 
 /// `count` labels in the order they are handed out. None is a prefix of another, so each
 /// label is complete the moment it is typed. All are as short as possible and within one
-/// letter of each other, and the home-row letters stay single the longest.
+/// letter of each other, and the first letters stay single the longest.
 pub fn labels(count: usize) -> Vec<String> {
     let mut labels: Vec<String> = ALPHABET.chars().map(String::from).collect();
     // Grow by turning the least-wanted of the shortest labels into one label per letter.
@@ -24,8 +25,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_few_links_get_single_home_row_letters() {
-        assert_eq!(labels(4), ["s", "a", "d", "f"]);
+    fn a_few_links_get_the_left_hand_letters_in_order() {
+        assert_eq!(labels(9), ["q", "w", "e", "a", "s", "d", "z", "x", "c"]);
         assert!(labels(0).is_empty());
     }
 
@@ -55,9 +56,18 @@ mod tests {
     }
 
     #[test]
-    fn the_home_row_keeps_single_letters_longest() {
+    fn the_first_letters_keep_single_labels_longest() {
         let l = labels(20);
-        assert_eq!(&l[..8], ["s", "a", "d", "f", "j", "k", "l", "e"]);
+        assert_eq!(&l[..9], ["q", "w", "e", "a", "s", "d", "z", "x", "c"]);
         assert_eq!(l.iter().filter(|s| s.len() == 1).count(), 13);
+        for n in 0..=420 {
+            let singles: String = labels(n).iter().filter(|s| s.len() == 1).map(String::as_str).collect();
+            assert!(ALPHABET.starts_with(&singles), "count {n}: {singles}");
+        }
+    }
+
+    #[test]
+    fn no_label_uses_f_the_key_that_starts_hints() {
+        assert!(labels(420).iter().all(|l| !l.contains('f')));
     }
 }

@@ -39,7 +39,7 @@ echo "== F labels, a label follows"
 page index.html; $M "$P" key escape; sleep 0.3; $M "$P" key f
 check f-labels-the-page within labels-are 7
 $M "$P" shot "$MAKO_RUN/evidence/f.png" >/dev/null 2>&1
-$M "$P" key s
+$M "$P" key q
 check typing-a-label-follows-it within sh -c "$M $P title | grep -qx Two"
 check labels-gone-after-follow labels-are 0
 
@@ -50,7 +50,7 @@ check escape-ends-hints within labels-are 0
 check escape-follows-nothing test "$($M "$P" title)" = Hints
 
 echo "== F in a text field types"
-$M "$P" key f; within labels-are 7; $M "$P" key f
+$M "$P" key f; within labels-are 7; $M "$P" key a
 within sh -c "$M $P title | grep -qx typing"
 $M "$P" key f
 check f-in-text-field-types within sh -c "$M $P title | grep -qx 'typed f'"
@@ -60,21 +60,21 @@ $M "$P" key escape
 echo "== narrowing"
 page many.html; $M "$P" key f
 check twenty-links-twenty-labels within labels-are 20
-$M "$P" key h
+$M "$P" key b
 check first-letter-narrows within labels-are 7
 $M "$P" shot "$MAKO_RUN/evidence/narrowed.png" >/dev/null 2>&1
-$M "$P" key x
-check unknown-letter-keeps-hints labels-are 7
+$M "$P" key f
+check f-is-no-label-keeps-hints labels-are 7
 $M "$P" key delete
 check delete-takes-letter-back within labels-are 20
-$M "$P" key h; $M "$P" key s
+$M "$P" key b; $M "$P" key q
 check two-letter-label-follows within active-url-ends 'two.html?14'
 
 echo "== ⇧F opens beneath"
 page index.html; $M "$P" menu View Reload; $M "$P" wait-title Hints 5 >/dev/null; sleep 0.5
 $M "$P" key shift+f
 check shift-f-labels-only-web-links within labels-are 3
-$M "$P" key a
+$M "$P" key w
 check shift-f-opens-beneath within any-url-ends three.html
 check shift-f-stays test "$($M "$P" title)" = Hints
 

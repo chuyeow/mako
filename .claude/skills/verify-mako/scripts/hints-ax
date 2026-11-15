@@ -41,29 +41,29 @@ fresh() { $M "$P" press-id mako.trail.1; within sh -c "$M $P tree 4 | grep -q 'm
 echo "== jump to link"
 open-hints "Jump to Link…"
 labels > "$MAKO_RUN/evidence/labels.txt"; $M "$P" shot "$MAKO_RUN/evidence/labels.png" >/dev/null 2>&1
-check labels-only-what-is-in-view test "$(labels)" = "$(printf 's two.html\na three.html\nd Press\nf Type here\nj Script\nk Save\nl three.html?half')"
+check labels-only-what-is-in-view test "$(labels)" = "$(printf 'q two.html\nw three.html\ne Press\na Type here\ns Script\nd Save\nz three.html?half')"
 check menu-shows-shortcut sh -c "$M $P tree 4 --menus | grep -q 'Jump to Link….*cmd=\"J\"'"
-$M "$P" press-id mako.hint.s
+$M "$P" press-id mako.hint.q
 check link-label-follows-the-link within $M "$P" wait-title Two 1
 check followed-link-opens-beneath test "$(parent-of Two)" = Hints
 check labels-gone-after-follow test "$(count)" = 0
 
-fresh; open-hints "Jump to Link…"; $M "$P" press-id mako.hint.d
+fresh; open-hints "Jump to Link…"; $M "$P" press-id mako.hint.e
 check button-gets-a-trusted-click within $M "$P" wait-title "pressed trusted" 1
-open-hints "Jump to Link…"; $M "$P" press-id mako.hint.f
+open-hints "Jump to Link…"; $M "$P" press-id mako.hint.a
 check text-field-label-focuses-it within $M "$P" wait-title typing 1
-open-hints "Jump to Link…"; $M "$P" press-id mako.hint.j
+open-hints "Jump to Link…"; $M "$P" press-id mako.hint.s
 check script-link-runs within $M "$P" wait-title "script link" 1
-open-hints "Jump to Link…"; $M "$P" press-id mako.hint.l
+open-hints "Jump to Link…"; $M "$P" press-id mako.hint.z
 check half-covered-link-clicks-its-visible-part within sh -c "python3 -I -c 'import json,sys; n=json.load(open(sys.argv[1]))[\"nodes\"]; sys.exit(not any(v[\"url\"].endswith(\"three.html?half\") for v in n.values()))' '$MAKO_RUN/state/trails.json'"
-fresh; open-hints "Jump to Link…"; $M "$P" press-id mako.hint.k
+fresh; open-hints "Jump to Link…"; $M "$P" press-id mako.hint.d
 check download-link-downloads within sh -c "ls '$MAKO_RUN/state/downloads' | grep -q three"
 
 echo "== open link beneath"
 open-hints "Open Link Beneath…"
-check beneath-labels-only-web-links test "$(labels)" = "$(printf 's two.html\na three.html\nd three.html?half')"
+check beneath-labels-only-web-links test "$(labels)" = "$(printf 'q two.html\nw three.html\ne three.html?half')"
 before=$($M "$P" title)
-$M "$P" press-id mako.hint.a
+$M "$P" press-id mako.hint.w
 check beneath-opens-three within sh -c "$M $P menu-items Trails | grep -q three.html"
 check beneath-stays-on-page test "$($M "$P" title)" = "$before"
 check beneath-labels-gone test "$(count)" = 0
@@ -71,7 +71,7 @@ check beneath-labels-gone test "$(count)" = 0
 echo "== zoomed page"
 fresh; $M "$P" menu View "Zoom In"; $M "$P" menu View "Zoom In"; $M "$P" menu View Reload
 $M "$P" wait-title Hints 5 >/dev/null
-open-hints "Jump to Link…"; $M "$P" shot "$MAKO_RUN/evidence/zoomed.png" >/dev/null 2>&1; $M "$P" press-id mako.hint.f
+open-hints "Jump to Link…"; $M "$P" shot "$MAKO_RUN/evidence/zoomed.png" >/dev/null 2>&1; $M "$P" press-id mako.hint.a
 check zoomed-label-clicks-its-field within $M "$P" wait-title typing 1
 $M "$P" menu View "Actual Size"
 

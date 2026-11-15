@@ -1,6 +1,6 @@
 # Link hints
 
-Press F on a page and every link and control in view gets a short label, in the active trail's colours. Typing a label clicks what it marks, with a real click, so links open beneath the page as a clicked link does, buttons press, text fields take focus and download links download. ⇧F labels only web links, and the chosen one opens beneath the page without leaving it, like a middle-click. F only starts hints when the page and its text fields leave the key alone: typing F in a field types it, and a page that handles F itself (a video player's full-screen key) keeps it. History → Jump to Link… (⌘J) and Open Link Beneath… (⇧⌘J) work on any page. Labels use home-row letters first and are as short as the count allows, and none is the start of another, so a label acts the moment its last letter is typed.
+Press F on a page and every link and control in view gets a short label, in the active trail's colours. Typing a label clicks what it marks, with a real click, so links open beneath the page as a clicked link does, buttons press, text fields take focus and download links download. ⇧F labels only web links, and the chosen one opens beneath the page without leaving it, like a middle-click. F only starts hints when the page and its text fields leave the key alone: typing F in a field types it, and a page that handles F itself (a video player's full-screen key) keeps it. History → Jump to Link… (⌘J) and Open Link Beneath… (⇧⌘J) work on any page. Labels use Q W E A S D Z X C first, then R T G V B, so the right hand can stay on the pointer; never F, which starts hints. They are as short as the count allows, and none is the start of another, so a label acts the moment its last letter is typed.
 
 ## Sub-features
 
@@ -18,12 +18,12 @@ Press F on a page and every link and control in view gets a short label, in the 
 
 ## Driving it with makoctl
 
-Serve `fixtures/hints/` with `python3 -m http.server`. `index.html` has two links, a half-covered link, a button in a disabled fieldset, a button that titles the page `pressed trusted` on a trusted click, a text field that titles it `typing` on focus and `typed <text>` on input, a `javascript:` link, a download link, and a hidden link, a disabled button, a covered link and a link below the fold that must get no label. `many.html` has 20 links, so labels 14–20 are two letters (`hs`…`hl`). `eats-f.html` handles F itself.
+Serve `fixtures/hints/` with `python3 -m http.server`. `index.html` has two links, a half-covered link, a button in a disabled fieldset, a button that titles the page `pressed trusted` on a trusted click, a text field that titles it `typing` on focus and `typed <text>` on input, a `javascript:` link, a download link, and a hidden link, a disabled button, a covered link and a link below the fold that must get no label. `many.html` has 20 links, so labels 14–20 are two letters (`bq`…`bz`). `eats-f.html` handles F itself.
 
 - **Labels.** `menu History "Jump to Link…"`, then `tree 30 | grep mako.hint`: `s` two.html, `a` three.html, `d` Press, `f` Type here, `j` Script, `k` Save, `l` three.html?half (a link whose right part is covered), nothing else (no label for the button in the disabled fieldset). `shot` shows them.
-- **Follow.** `press-id mako.hint.s`; `wait-title Two`; in `trails.json` Two's parent is Hints.
-- **Beneath.** `menu History "Open Link Beneath…"`: only `s` and `a`. `press-id mako.hint.a`: `three.html` appears in `menu-items Trails`, `title` unchanged.
-- **Keys (focus).** `key f`, `key s`; on `many.html` `key f`, `key h` (7 labels), `key x` (still 7), `key delete` (20), `key h`, `key s` (the active page is `two.html?14`); `key escape`; `key shift+f`; on `eats-f.html` `key f` titles it `page got f` with no labels, `key cmd+j` labels anyway.
+- **Follow.** `press-id mako.hint.q`; `wait-title Two`; in `trails.json` Two's parent is Hints.
+- **Beneath.** `menu History "Open Link Beneath…"`: only `q`, `w` and `e`. `press-id mako.hint.w`: `three.html` appears in `menu-items Trails`, `title` unchanged.
+- **Keys (focus).** `key f`, `key q`; on `many.html` `key f`, `key b` (7 labels), `key f` (still 7: F is no label), `key delete` (20), `key b`, `key q` (the active page is `two.html?14`); `key escape`; `key shift+f`; on `eats-f.html` `key f` titles it `page got f` with no labels, `key cmd+j` labels anyway.
 - **Scripts.** `scripts/hints-ax` (background) and `scripts/hints-keys-headed` (keys only).
 
 ## Gotchas

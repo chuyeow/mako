@@ -140,7 +140,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.omnibox.status` | The line under the field, present only with an error or message (the cap refusal, `Not found`, a config error). |
 | `mako.omnibox.scrim` | The dimmed layer over the whole window while the omnibox is open; AX button `Close address bar`. Pressing or clicking it closes the omnibox and does nothing else. |
 | `mako.blank` | The app icon shown when no page is open. |
-| `mako.hint.<label>` | A link hint's label (History → Jump to Link… ⌘J, or F on a page), present only while hints show. `<label>` is the letters to type, lowercase (`mako.hint.s`, `mako.hint.hs`); its AX label (`desc` in `tree`) is the link's address, else the control's text, `aria-label` or placeholder. `press-id` clicks what it marks, or in Open Link Beneath… mode opens the link beneath. |
+| `mako.hint.<label>` | A link hint's label (History → Jump to Link… ⌘J, or F on a page), present only while hints show. `<label>` is the letters to type, lowercase (`mako.hint.q`, `mako.hint.bq`); its AX label (`desc` in `tree`) is the link's address, else the control's text, `aria-label` or placeholder. `press-id` clicks what it marks, or in Open Link Beneath… mode opens the link beneath. |
 | `mako.popup` | A sign-in popup window. |
 | `mako.dialog.ok`, `mako.dialog.cancel` | A page dialog's buttons (Cancel only for `confirm()` and `prompt()`). Also the Clear History and Cancel buttons of the History → Clear History… sheet. |
 | `mako.dialog.field` | A `prompt()` dialog's text field. |
