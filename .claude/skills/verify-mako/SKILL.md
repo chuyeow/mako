@@ -97,7 +97,7 @@ Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root 
 | `dialogs-bg` | `alert()`, `confirm()`, `prompt()` wait for the person | nothing | 3 |
 | `dialogs-ax` | answering dialogs, silencing, which navigations lift it | Accessibility | 17 |
 | `omnibox-ax` | address bar suggestions: visits recorded in `history.json`, open pages before history, picking an open page or a history row per mode, no rows when empty or in find, relaunch, a page inside a collapsed one, `remember_history = false` (including a late title), an in-page jump then a reload, Clear History…, the corner art picked at random | Accessibility | 41 |
-| `blank-ax` | the blank page's painting: shown on launch and after closing the last page, one random pick of the ten each time, hidden by a page | Accessibility | 6 |
+| `blank-ax` | the blank page's painting: shown on launch and after closing the last page, the next of the ten shuffled each time (all ten before a repeat, never twice in a row), hidden by a page | Accessibility | 7 |
 | `isolation-ax` | a run's website data is invisible to another run; the daily Mako's data is untouched | Accessibility | 4 (the last is `SKIP` while the daily Mako runs) |
 | `ux-headed` | middle-clicks on page content and sidebar rows, ⌘1 as a key, the omnibox with a long address, which icon each row shows | focus, Accessibility, Screen Recording | 24 |
 | `omnibox-keys-headed` | Return in ⌘L loads into the page; Option-Return opens beside it (a new trail after a root, a sibling after a page) with no newline in the field; ↓/↑ select a suggestion, Return picks it, Escape closes | focus, Accessibility (keys only, so it also runs over Jump Desktop) | 19 |

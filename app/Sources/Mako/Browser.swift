@@ -362,7 +362,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             recency.append(id)
         }
         for id in recency.dropLast(Self.maxLiveViews) { unload(id) }
-        if active == nil, blank.isHidden { blank.pickAtRandom() }
+        if active == nil, blank.isHidden { blank.pickNext() }
         blank.isHidden = active != nil
         window.title = active?.label ?? "Mako"
         window.subtitle = ""
@@ -1206,8 +1206,8 @@ final class CornerArt: NSImageView {
     }
 }
 
-/// What the page area shows with no page open: a painting picked at random each time it
-/// appears, filling the area and anchored at its foot, over sidebar paper. A narrow area
+/// What the page area shows with no page open: the next painting from a shuffled deck each
+/// time it appears, so all of them show before any repeats, filling the area and anchored at its foot, over sidebar paper. A narrow area
 /// crops the sides, so each painting keeps the side its subject sits on (0 left, 1 right).
 @MainActor
 final class BlankArt: NSView {
@@ -1218,6 +1218,8 @@ final class BlankArt: NSView {
     ]
     private var image: NSImage?
     private var anchor: CGFloat = 0.5
+    private var deck: [Int] = []
+    private var last: Int?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1227,8 +1229,15 @@ final class BlankArt: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func pickAtRandom() {
-        guard let picture = Self.pictures.randomElement() else { return }
+    func pickNext() {
+        if deck.isEmpty {
+            deck = Array(Self.pictures.indices).shuffled()
+            // A new round never opens with the painting that closed the last one.
+            if deck.count > 1, deck.first == last { deck.swapAt(0, deck.count - 1) }
+        }
+        let index = deck.removeFirst()
+        last = index
+        let picture = Self.pictures[index]
         image = Bundle.main.url(forResource: picture.file, withExtension: "jpg", subdirectory: "Backgrounds").flatMap(NSImage.init(contentsOf:))
         anchor = picture.anchor
         needsDisplay = true

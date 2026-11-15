@@ -43,7 +43,8 @@ log show --info --last 10m --predicate "processID == $P AND subsystem == \"com.w
 check one-pick-per-blank test "$(grep -c . "$E/backgrounds.txt")" -eq "$shown"
 check blank-shown-often test "$shown" -ge 8
 check only-the-ten sh -c "! grep -v -x -E 'Aperture fan|Miyo asleep|Miyo at the window|Cubist Miyo|Iris|Qilin|Rainbow squiggle|Canyon strata|Gazers|Great wave' '$E/backgrounds.txt'"
-check backgrounds-vary test "$(sort -u "$E/backgrounds.txt" | grep -c .)" -ge 3
+check every-painting-before-a-repeat test "$(head -10 "$E/backgrounds.txt" | sort -u | grep -c .)" -eq 10
+check never-the-same-twice-in-a-row sh -c "! uniq -d '$E/backgrounds.txt' | grep -q ."
 
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"
