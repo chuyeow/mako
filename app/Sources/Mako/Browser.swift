@@ -53,7 +53,7 @@ let log = Logger(subsystem: "com.wego.mako", category: "browser")
 /// and omnibox controls. Editing and navigation shortcuts keep AppKit's order.
 final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
-        (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
+        (.command, "n"), (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
         (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
         ([.command, .control], "s"),
     ] + (1...9).map { (.command, String($0)) }
@@ -346,7 +346,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             visited[id] = nil
         }
         let active = store.active
-        let view = active.map(liveView)
+        let view = active.map { liveView($0.id, url: $0.url, title: $0.title) }
         if view !== shown {
             hints.cancel()
             shown?.removeFromSuperview()
@@ -406,11 +406,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     /// The page's web view, created and loaded from its saved address on first use.
-    private func liveView(_ row: TrailRow) -> WKWebView {
-        if let view = views[row.id] { return view }
-        let id = row.id
+    private func liveView(_ id: UInt64, url: String, title: String) -> WKWebView {
+        if let view = views[id] { return view }
         let w = PageView(frame: .zero, configuration: webConfig)
-        w.onBackgroundLink = { [weak self] url in self?.apply("open_child", ["parent": id, "url": url.absoluteString, "select": false]) }
+        w.onBackgroundLink = { [weak self] url in self?.openChild(beneath: id, url, inBackground: true) }
         w.navigationDelegate = self
         w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
@@ -422,10 +421,28 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             w.observe(\.url) { [weak self] _, _ in MainActor.assumeIsolated { self?.pageChanged(id) } },
         ]
         views[id] = w
-        reported[id] = [row.url, row.title]
-        if restored.remove(id) != nil { visited[id] = URL(string: row.url).map(Self.visitAddress) }
-        if let url = URL(string: row.url) { w.load(URLRequest(url: url)) }
+        reported[id] = [url, title]
+        if restored.remove(id) != nil { visited[id] = URL(string: url).map(Self.visitAddress) }
+        if let url = URL(string: url) { w.load(URLRequest(url: url)) }
         return w
+    }
+
+    /// Every page opened beneath another comes through here. In front, it is selected and
+    /// loads as it is shown. In the background (middle-click, ⌘-click, ⇧F) it starts loading
+    /// now, behind the shown page; WebKit starts no sound or video in a page that is not in a
+    /// window, so it stays quiet until it is first shown (`background-ax` checks).
+    private func openChild(beneath parent: UInt64, _ url: URL, inBackground: Bool) {
+        guard inBackground else {
+            apply("open_child", ["parent": parent, "url": url.absoluteString])
+            return
+        }
+        let before = store.pages
+        guard apply("open_child", ["parent": parent, "url": url.absoluteString, "select": false]) == nil,
+              let id = store.pages.subtracting(before).first else { return }
+        _ = liveView(id, url: url.absoluteString, title: "")
+        // Just behind the shown page in the eviction order, so it never pushes that one out.
+        recency.insert(id, at: max(0, recency.count - 1))
+        for id in recency.dropLast(Self.maxLiveViews) { unload(id) }
     }
 
     private func unload(_ id: UInt64) {
@@ -493,7 +510,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func open(_ url: URL) {
         hideOmnibox()
         if apply("open_trail", ["url": url.absoluteString]) != nil, let parent = store.active?.id {
-            apply("open_child", ["parent": parent, "url": url.absoluteString])
+            openChild(beneath: parent, url, inBackground: false)
         }
     }
 
@@ -606,6 +623,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         card.look = look
         glyph.look = look
         corner.pickAtRandom()
+        scrim.dims = blank.isHidden
         field.placeholderString = look == .find ? "Find in page" : "Search or enter address"
         let accent = look.slot.map(NSColor.trail) ?? .ink
         omniEditor.insertionPointColor = accent
@@ -740,6 +758,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         Perf.measure("newTrail")
         showOmnibox(for: .newTrail)
     }
+    /// The blank page with its painting, trails kept, and the omnibox open for a new trail.
+    @objc func newBlankPage(_: Any?) {
+        apply("blank")
+        showOmnibox(for: .newTrail)
+    }
     @objc func newPage(_: Any?) {
         guard let parent = store.active?.id else { return showOmnibox(for: .newTrail) }
         showOmnibox(for: .child(parent))
@@ -848,8 +871,16 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // ⌘W in the About panel or a sign-in popup closes that window, not a page behind it.
         if let key = NSApp.keyWindow, key !== window { return key.performClose(nil) }
         Perf.measure("closePage")
-        guard let id = store.active?.id else { return NSSound.beep() }
+        guard let id = store.active?.id else { return leaveBlankPage() }
         close(id)
+    }
+
+    /// ⌘W on the blank page: back to the page shown before it, else the first trail's root
+    /// (nothing was shown since launch). With no page at all there is nowhere to go.
+    private func leaveBlankPage() {
+        hideOmnibox()
+        if let last = recency.last(where: store.pages.contains) { return select(last) }
+        if apply("jump", ["trail": 0]) != nil { NSSound.beep() }
     }
 
     private func close(_ id: UInt64) {
@@ -894,7 +925,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             if background || action.navigationType == .linkActivated {
                 log.info("child of \(parent) \(url.absoluteString, privacy: .public)\(background ? " (middle-click)" : "", privacy: .public)")
                 // ⌘-click opens the page beneath this one without leaving it.
-                apply("open_child", ["parent": parent, "url": url.absoluteString, "select": !(background || action.modifierFlags.contains(.command))])
+                openChild(beneath: parent, url, inBackground: background || action.modifierFlags.contains(.command))
                 return .cancel
             }
         }
@@ -978,13 +1009,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
                  for action: WKNavigationAction, windowFeatures features: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url, isWeb(url), let parent = id(of: webView), (webView as? PageView)?.claimBackground() == true {
             log.info("child of \(parent) \(url.absoluteString, privacy: .public) (middle-click)")
-            apply("open_child", ["parent": parent, "url": url.absoluteString, "select": false])
+            openChild(beneath: parent, url, inBackground: true)
             return nil
         }
         guard action.navigationType != .linkActivated else {
             if let url = action.request.url {
                 if isWeb(url), let parent = id(of: webView) {
-                    apply("open_child", ["parent": parent, "url": url.absoluteString])
+                    openChild(beneath: parent, url, inBackground: false)
                 } else {
                     webView.load(action.request)
                 }
@@ -1141,6 +1172,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 @MainActor
 final class Scrim: NSView {
     var onDismiss: () -> Void = {}
+    /// Off over the blank page: there is nothing to dim, and the painting stays as it is.
+    var dims = true { didSet { needsDisplay = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1153,6 +1186,7 @@ final class Scrim: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard dims else { return }
         NSColor.scrim.setFill()
         dirtyRect.intersection(bounds).fill()
     }
