@@ -25,7 +25,7 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 - `sidebar-scroller` the sidebar shows a scroller only when its rows overflow, even with "Show scroll bars: Always".
 - `sidebar-width` the sidebar starts at a fifth of the window (200–320 pt), drags by its edge between 160 pt and the smaller of 480 pt and the window width less 400, and keeps its width across restarts.
 - `trail-indent-cap` each level beneath the first indents a row 16 pt, up to the deepest level that leaves its name 40 pt beside the controls; deeper pages sit at that level. At the narrowest sidebar two levels still show.
-- `find` ⌘F finds in the page from the omnibox; Enter or ⌘G next, ⇧⌘G previous.
+- `find` ⌘F finds in the page from the omnibox; Enter or ⌘G next, ⇧⌘G previous. Find keeps its own query: ⌘F reopens on the last search, and ⌘G or Find Next from the palette searches for it, whatever was typed in another mode since.
 - `download` a file WebKit cannot show, or an `<a download>` link, is saved to `~/Downloads` (a run's `MAKO_DOWNLOADS`), renamed `name 2.ext` rather than overwriting, and quarantined so Gatekeeper checks it. Only the page itself may start one, never an embedded frame or a blocked host.
 - `trail-blocked-link` a link to a blocked host opens a child page showing the block notice.
 

@@ -70,6 +70,15 @@ check menu-commands-read test "$(grep -c . "$E/menu-commands.txt")" -ge 30
 check every-menu-command-found test ! -s "$E/missing.txt"
 $M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
 
+echo "== find keeps its own query"
+$M "$P" menu Edit "Find…"; within $M "$P" exists mako.omnibox.field
+$M "$P" set mako.omnibox.field "still"; $M "$P" confirm mako.omnibox.field
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+palette; type_in "find next"; $M "$P" confirm mako.omnibox.field; within gone mako.omnibox
+$M "$P" menu Edit "Find…"; within $M "$P" exists mako.omnibox.field
+check find-query-survives-the-palette test "$($M "$P" value mako.omnibox.field)" = still
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+
 echo "== running them"
 palette; type_in "new trail"; $M "$P" confirm mako.omnibox.field
 check runs-new-trail within sh -c "$M $P tree 30 | grep -q 'id=\"mako.omnibox.field\".*desc=\"New trail'"
@@ -112,7 +121,7 @@ check still-runs-the-pick within is 's["active"]' "$first"
 sleep 1
 log show --info --last 10m --predicate "processID == $P AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null |
   sed -n 's/.*command \(.* › .*\)$/\1/p' > "$E/commands-run.txt"
-check each-run-logged test "$(grep -c . "$E/commands-run.txt")" -ge 11
+check each-run-logged test "$(grep -c . "$E/commands-run.txt")" -ge 12
 check log-names-the-menu grep -q -x 'View › Hide Sidebar' "$E/commands-run.txt"
 
 echo "== $fails failure(s)"

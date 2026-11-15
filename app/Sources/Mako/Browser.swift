@@ -158,6 +158,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let hint = NSTextField(labelWithString: "")
     /// Holds the hint, so it lines up with the field inside the panel's narrower margins.
     private let hintRow = NSStackView()
+    /// What find looks for: kept apart from the field, which the other modes reuse, so ⌘G
+    /// and Find Next still mean the last search after an address or a command was typed.
+    private var findQuery = ""
     /// An error or message for the open omnibox; it goes when the omnibox next opens.
     private var omniMessage: String?
     private var omniboxOpen: Bool { !omniLayer.isHidden }
@@ -675,6 +678,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func controlTextDidChange(_ note: Notification) {
         guard note.object as? NSTextField === field else { return }
         field.fitFont()
+        if case .find = omniTarget { findQuery = field.stringValue }
         suggest(field.stringValue)
     }
 
@@ -863,14 +867,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         showOmnibox(for: .command)
     }
 
-    @objc func findInPage(_: Any?) { showOmnibox(for: .find, text: field.stringValue) }
+    @objc func findInPage(_: Any?) { showOmnibox(for: .find, text: findQuery) }
     @objc func findNext(_: Any?) { find(backwards: false) }
     @objc func findPrevious(_: Any?) { find(backwards: true) }
     private func find(backwards: Bool) {
-        guard let shown, !field.stringValue.isEmpty else { return }
+        guard let shown, !findQuery.isEmpty else { return }
         let config = WKFindConfiguration()
         config.backwards = backwards
-        shown.find(field.stringValue, configuration: config) { [weak self] result in
+        shown.find(findQuery, configuration: config) { [weak self] result in
             self?.omniMessage = result.matchFound ? nil : "Not found"
             self?.updateHint()
         }
