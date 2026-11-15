@@ -9,6 +9,7 @@ Mako remembers the web pages it finishes loading in `history.json` beside the co
 - `hist-title` a title that arrives or changes after the load updates the entry without a visit.
 - `hist-cap` at 5,000 entries a new address replaces the entry with the lowest score, `(1 + ln visits) × 0.5^(age ÷ 30 days)`.
 - `hist-off` `remember_history = false` (default `true`) records nothing, not even a later title for an address already in it, and suggests nothing from history; open pages are still suggested. The file is left as it was, so turning history on again brings its suggestions back. Any other value is a config issue (`mako.sidebar.config`) and history stays on.
+- `hist-commands` `remember_history = false` also stops the command palette counting runs in `commands.json` (`features/omnibox.md`, `omni-commands`); runs already counted still rank.
 - `hist-clear` History → Clear History… asks on a sheet (`mako.dialog.ok` Clear History, `mako.dialog.cancel` Cancel). Cancel changes nothing; Clear History empties `history.json` (`"entries":[]`) and the suggestions with it. Open pages and trails stay.
 - `hist-bad-file` a `history.json` Mako cannot read is moved to `history.json.bad` and history starts empty (from source; not driven).
 
