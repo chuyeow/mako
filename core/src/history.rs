@@ -71,8 +71,14 @@ pub fn save(history: &History) -> String {
 /// Frecency: `(1 + ln visits) × 0.5^(age ÷ 30 days)`. Counting visits by their logarithm
 /// keeps one habit from burying everything else; the half-life lets old habits fade.
 pub fn score(entry: &Entry, now: u64) -> f64 {
-    let age = now.saturating_sub(entry.last_visit) as f64;
-    (1.0 + f64::from(entry.visits.max(1)).ln()) * 0.5f64.powf(age / HALF_LIFE_SECS)
+    frecency(entry.visits, entry.last_visit, now)
+}
+
+/// `count` uses, the last at `last`, as of `now`: rises with the log of the count and halves
+/// every thirty days since the last. The command palette ranks commands the same way.
+pub fn frecency(count: u32, last: u64, now: u64) -> f64 {
+    let age = now.saturating_sub(last) as f64;
+    (1.0 + f64::from(count.max(1)).ln()) * 0.5f64.powf(age / HALF_LIFE_SECS)
 }
 
 /// The address a visit is kept under: web pages only, without the `#fragment`, which names a

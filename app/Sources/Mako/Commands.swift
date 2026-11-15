@@ -11,6 +11,16 @@ struct MenuCommand {
 
     var name: String { item.title }
 
+    /// What it does, for counting its runs: its action, which stays put while its title
+    /// changes (Hide Sidebar, Show Sidebar). Empty for the Trails menu's pages, which are
+    /// pages rather than commands; the address bar already ranks pages by visits.
+    var id: String {
+        guard let action = item.action, !Self.pageActions.contains(action) else { return "" }
+        return NSStringFromSelector(action)
+    }
+
+    private static let pageActions: Set<Selector> = [#selector(Browser.selectMenuRow(_:)), #selector(Browser.jumpToTrail(_:))]
+
     /// The item's shortcut as the menu bar draws it, e.g. ⌥⌘T; empty without one, or for a
     /// key with no printable name (AppKit's own items use function-key characters).
     var keys: String {
@@ -46,11 +56,12 @@ struct MenuCommand {
         }
     }
 
-    /// `commands` that match `query`, best first; the core ranks them.
-    static func rank(_ query: String, _ commands: [MenuCommand]) -> [MenuCommand] {
-        let list = commands.map { ["name": $0.name, "path": $0.path.joined(separator: " ")] }
+    /// `commands` that match `query`, best first; the core ranks them, lifting those run often
+    /// or lately.
+    static func rank(_ query: String, _ commands: [MenuCommand], uses: CommandUses, at date: Date = .now) -> [MenuCommand] {
+        let list = commands.map { ["name": $0.name, "path": $0.path.joined(separator: " "), "id": $0.id] }
         guard let data = try? JSONSerialization.data(withJSONObject: list),
-              let reply = Core.take(mako_rank_commands(query, String(decoding: data, as: UTF8.self))),
+              let reply = Core.take(mako_rank_commands(query, String(decoding: data, as: UTF8.self), uses.json, UInt64(max(0, date.timeIntervalSince1970)))),
               let order = try? JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [Int] else { return [] }
         return order.filter(commands.indices.contains).map { commands[$0] }
     }
@@ -60,5 +71,23 @@ struct MenuCommand {
     func perform() {
         guard let action = item.action else { return }
         NSApp.sendAction(action, to: item.target, from: item)
+    }
+}
+
+/// How often and how recently each command ran from the palette, kept in `commands.json`
+/// beside the config. The core decides what counts; nothing is kept with
+/// `remember_history = false`. Nothing here leaves the Mac.
+@MainActor
+final class CommandUses {
+    static var fileURL: URL { Core.configURL.deletingLastPathComponent().appending(path: "commands.json") }
+
+    /// The saved JSON, passed whole to the core: at most a few hundred short entries.
+    private(set) var json = (try? String(contentsOf: CommandUses.fileURL, encoding: .utf8)) ?? ""
+
+    func ran(_ command: MenuCommand, at date: Date = .now) {
+        guard let next = Core.take(mako_record_command(Core.config, json, command.id, UInt64(max(0, date.timeIntervalSince1970)))) else { return }
+        json = next
+        do { try next.write(to: Self.fileURL, atomically: true, encoding: .utf8) }
+        catch { log.error("could not save command uses: \(error.localizedDescription, privacy: .public)") }
     }
 }

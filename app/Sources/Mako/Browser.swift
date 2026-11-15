@@ -167,6 +167,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private var choices: [Choice] = []
     /// The menu commands enabled when the palette opened; typing ranks these.
     private var commands: [MenuCommand] = []
+    private let commandUses = CommandUses()
     private let hint = NSTextField(labelWithString: "")
     /// Holds the hint, so it lines up with the field inside the panel's narrower margins.
     private let hintRow = NSStackView()
@@ -700,7 +701,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private func suggest(_ query: String?) {
         switch omniTarget {
         case .find: choices = []
-        case .command: choices = MenuCommand.rank(query ?? "", commands).map(Choice.command)
+        case .command: choices = MenuCommand.rank(query ?? "", commands, uses: commandUses).map(Choice.command)
         default: choices = (query.map { history.suggestions(for: $0, trails: store.state) } ?? []).map(Choice.suggestion)
         }
         showSuggestions()
@@ -770,6 +771,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private func run(_ command: MenuCommand) {
         hideOmnibox()
         log.info("command \(command.path.joined(separator: " › "), privacy: .public) › \(command.name, privacy: .public)")
+        commandUses.ran(command)
         command.perform()
     }
 

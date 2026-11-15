@@ -118,8 +118,30 @@ check retitled-while-open within sh -c "$M $P menu-items Trails | grep -q 'Late 
 $M "$P" confirm mako.omnibox.field
 check still-runs-the-pick within is 's["active"]' "$first"
 
+echo "== often and lately used rise"
+U2="$MAKO_RUN/state/commands.json"
+runs() { python3 -c "import json, sys; u = {c['id']: c['runs'] for c in json.load(open('$U2'))['commands']}; print(u.get(sys.argv[1], 0))" "$1"; }
+for _ in 1 2 3 4; do palette; type_in "zoom out"; $M "$P" confirm mako.omnibox.field; within gone mako.omnibox; done
+check runs-are-counted-by-action test "$(runs zoomOut:)" = 4
+check a-title-change-keeps-one-count test "$(runs toggleSidebar:)" = 2
+check pages-are-not-counted python3 -c "import json, sys; ids = [c['id'] for c in json.load(open('$U2'))['commands']]; sys.exit(any(i in ('', 'selectMenuRow:', 'jumpToTrail:') for i in ids))"
+palette
+check most-used-first-on-opening test "$(rows | head -1)" = "Zoom Out"
+type_in "zoom"
+check most-used-first-among-matches test "$(rows | head -2 | tr '\n' ,)" = "Zoom Out,Zoom In,"
+$M "$P" shot "$E/palette-most-used.png" >/dev/null 2>&1
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+P_BEFORE=$P
+$C relaunch >/dev/null 2>&1; P=$($C pid); within $M "$P" exists mako.page; sleep 1
+palette
+check kept-across-a-relaunch test "$(rows | head -1)" = "Zoom Out"
+$M "$P" press-id mako.omnibox.scrim; within gone mako.omnibox
+printf 'max_trails = 3\nremember_history = false\n' > "$MAKO_RUN/state/config"; sleep 0.5
+palette; type_in "zoom in"; $M "$P" confirm mako.omnibox.field; within gone mako.omnibox
+check nothing-counted-with-history-off test "$(runs zoomIn:)" = 0
+
 sleep 1
-log show --info --last 10m --predicate "processID == $P AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null |
+log show --info --last 10m --predicate "(processID == $P OR processID == $P_BEFORE) AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null |
   sed -n 's/.*command \(.* › .*\)$/\1/p' > "$E/commands-run.txt"
 check each-run-logged test "$(grep -c . "$E/commands-run.txt")" -ge 12
 check log-names-the-menu grep -q -x 'View › Hide Sidebar' "$E/commands-run.txt"

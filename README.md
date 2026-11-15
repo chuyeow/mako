@@ -16,7 +16,7 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌘N | Blank page: every trail stays, the address bar opens for a new one |
 | ⌘T | New trail (refused at the cap; default 3, set in Settings) |
 | ⌥⌘T | New page beneath the current one |
-| ⌘K | Command palette: every menu command, by typing part of its name. On a site with its own ⌘K (GitHub, Slack), press it twice |
+| ⌘K | Command palette: every menu command, by typing part of its name, the ones you run often or lately first. On a site with its own ⌘K (GitHub, Slack), press it twice |
 | ⌘L | Omnibox: load an address in the current page (one line; long addresses shrink to fit) |
 | ↓ / ↑, Return | In the omnibox: select a suggestion (an open page or one from history) and go to it; Return with none selected loads what you typed |
 | ⌘W / ⇧⌘T | Close page (with the pages beneath it) / reopen closed page |
