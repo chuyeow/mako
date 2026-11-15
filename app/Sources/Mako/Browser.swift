@@ -128,7 +128,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private(set) var sidebarState = SidebarState.shown
     private let edge = EdgeView()
     private let topStrip = WindowDragStrip()
-    private let blank = NSImageView()
+    private let blank = BlankArt()
     /// Kept in sync on every change so the AX tree never depends on the menu being opened.
     let trailsMenu = NSMenu(title: "Trails")
     /// Everything the open omnibox puts over the window: the scrim, the card and the panel.
@@ -195,9 +195,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         container.setAccessibilityLabel("Page")
         blank.setAccessibilityIdentifier("mako.blank")
         blank.setAccessibilityLabel("No page")
-        blank.image = NSApp.applicationIconImage
-        blank.imageScaling = .scaleProportionallyUpOrDown
-        blank.alphaValue = 0.9
+        // Hidden until the first render finds no page, which picks its painting.
+        blank.isHidden = true
         blank.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(blank)
 
@@ -241,10 +240,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         pageBesideSidebar = container.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor)
         pageFullWidth = container.leadingAnchor.constraint(equalTo: root.leadingAnchor)
         NSLayoutConstraint.activate([
-            blank.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            blank.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            blank.widthAnchor.constraint(equalToConstant: 128),
-            blank.heightAnchor.constraint(equalToConstant: 128),
+            blank.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            blank.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            blank.topAnchor.constraint(equalTo: container.topAnchor),
+            blank.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             sidebarWidth,
             sidebarLeading,
             pageBesideSidebar,
@@ -363,6 +362,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             recency.append(id)
         }
         for id in recency.dropLast(Self.maxLiveViews) { unload(id) }
+        if active == nil, blank.isHidden { blank.pickAtRandom() }
         blank.isHidden = active != nil
         window.title = active?.label ?? "Mako"
         window.subtitle = ""
@@ -1203,6 +1203,50 @@ final class CornerArt: NSImageView {
         guard let picture = Self.pictures.randomElement() else { return }
         image = Bundle.main.url(forResource: picture.file, withExtension: "png", subdirectory: "Corners").flatMap(NSImage.init(contentsOf:))
         log.info("omnibox corner \(self.image == nil ? "missing " : "", privacy: .public)\(picture.name, privacy: .public)")
+    }
+}
+
+/// What the page area shows with no page open: a painting picked at random each time it
+/// appears, filling the area and anchored at its foot, over sidebar paper. A narrow area
+/// crops the sides, so each painting keeps the side its subject sits on (0 left, 1 right).
+@MainActor
+final class BlankArt: NSView {
+    static let pictures: [(name: String, file: String, anchor: CGFloat)] = [
+        ("Aperture fan", "aperture", 1), ("Miyo asleep", "miyo-asleep", 0), ("Miyo at the window", "miyo-window", 1),
+        ("Cubist Miyo", "miyo-cubist", 1), ("Iris", "iris", 0.5), ("Qilin", "qilin", 0), ("Rainbow squiggle", "squiggle", 0.5),
+        ("Canyon strata", "strata", 0.5), ("Gazers", "gazers", 1), ("Great wave", "wave", 0),
+    ]
+    private var image: NSImage?
+    private var anchor: CGFloat = 0.5
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.image)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func pickAtRandom() {
+        guard let picture = Self.pictures.randomElement() else { return }
+        image = Bundle.main.url(forResource: picture.file, withExtension: "jpg", subdirectory: "Backgrounds").flatMap(NSImage.init(contentsOf:))
+        anchor = picture.anchor
+        needsDisplay = true
+        log.info("blank art \(self.image == nil ? "missing " : "", privacy: .public)\(picture.name, privacy: .public)")
+    }
+
+    override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.sidebarPaper.setFill()
+        bounds.fill()
+        guard let image, image.size.width > 0, image.size.height > 0 else { return }
+        let scale = max(bounds.width / image.size.width, bounds.height / image.size.height)
+        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        // The paintings are on cream paper; at full strength they would glare in dark mode.
+        image.draw(in: NSRect(x: (bounds.width - size.width) * anchor, y: 0, width: size.width, height: size.height),
+                   from: .zero, operation: .sourceOver, fraction: dark ? 0.35 : 1)
     }
 }
 
