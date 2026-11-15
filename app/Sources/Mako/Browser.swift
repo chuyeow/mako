@@ -135,6 +135,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let omniLayer = NSView()
     private let scrim = Scrim()
     private let card = OmniCard()
+    private let corner = CornerArt()
     private let omnibox = NSView()
     private let glyph = OmniGlyph()
     private let field = OmniboxField()
@@ -551,10 +552,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         scrim.onDismiss = { [unowned self] in hideOmnibox() }
         guard let root = window.contentView else { return }
         omniLayer.isHidden = true
-        for view in [omniLayer, scrim, card, omnibox] { view.translatesAutoresizingMaskIntoConstraints = false }
+        for view in [omniLayer, scrim, card, omnibox, corner] { view.translatesAutoresizingMaskIntoConstraints = false }
         omniLayer.addSubview(scrim)
         omniLayer.addSubview(card)
         omniLayer.addSubview(omnibox)
+        omniLayer.addSubview(corner)
         // Over everything, the sidebar too: while it is open, the omnibox is the window's one task.
         root.addSubview(omniLayer, positioned: .above, relativeTo: nil)
         NSLayoutConstraint.activate([
@@ -570,6 +572,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             card.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: OmniCard.inset),
             card.topAnchor.constraint(equalTo: omnibox.topAnchor, constant: -OmniCard.inset),
             card.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: OmniCard.inset),
+            // Sits on the card's top edge, its foot 12 pt in: above the field's line.
+            corner.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -28),
+            corner.bottomAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            corner.widthAnchor.constraint(equalToConstant: CornerArt.size.width),
+            corner.heightAnchor.constraint(equalToConstant: CornerArt.size.height),
             stack.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor),
             stack.topAnchor.constraint(equalTo: omnibox.topAnchor),
@@ -598,6 +605,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         let look = look(for: target)
         card.look = look
         glyph.look = look
+        corner.pickAtRandom()
         field.placeholderString = look == .find ? "Find in page" : "Search or enter address"
         let accent = look.slot.map(NSColor.trail) ?? .ink
         omniEditor.insertionPointColor = accent
@@ -1168,6 +1176,33 @@ enum OmniLook: Equatable {
         case .newTrail(let slot), .page(let slot), .child(let slot): slot
         case .find: nil
         }
+    }
+}
+
+/// A small picture that peeks over the omnibox's top-right corner, a different one each
+/// time it opens. Clicks go through it to whatever is beneath.
+@MainActor
+final class CornerArt: NSImageView {
+    static let pictures: [(name: String, file: String)] = [
+        ("Miyo peeking", "miyo"), ("Squiggle", "squiggle"),
+    ]
+    static let size = NSSize(width: 120, height: 56)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        imageScaling = .scaleProportionallyUpOrDown
+        imageAlignment = .alignBottomRight
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func pickAtRandom() {
+        guard let picture = Self.pictures.randomElement() else { return }
+        image = Bundle.main.url(forResource: picture.file, withExtension: "png", subdirectory: "Corners").flatMap(NSImage.init(contentsOf:))
+        log.info("omnibox corner \(self.image == nil ? "missing " : "", privacy: .public)\(picture.name, privacy: .public)")
     }
 }
 
