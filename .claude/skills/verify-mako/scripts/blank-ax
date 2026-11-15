@@ -1,0 +1,83 @@
+#!/bin/bash
+# The blank page's art: each time the blank page shows (no page open), a background is
+# picked at random from the ten, and a page opening hides it. Accessibility actions only,
+# no focus. File → New Blank Page (⌘N) brings it up with the trails kept; Close Page (⌘W)
+# there goes back to the page shown before.
+# Prints PASS/FAIL per check; exit status is the number of failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/blank-ax"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+E="$MAKO_RUN/evidence"
+fails=0; srv=
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then echo "PASS $name"; else echo "FAIL $name"; fails=$((fails + 1)); fi; }
+within() { for _ in $(seq 40); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+gone() { $M "$P" exists "$1"; test $? = 4; }
+trap '$C stop >/dev/null 2>&1; [ -n "$srv" ] && { kill $srv 2>/dev/null; wait $srv 2>/dev/null; }' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+mkdir -p "$E"
+port=$((20000 + RANDOM % 20000)); U="http://127.0.0.1:$port"
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/omnibox >/dev/null 2>&1 &
+srv=$!; sleep 1
+out=$($C launch "" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid)
+
+check blank-on-launch $M "$P" exists mako.blank
+$M "$P" shot "$E/blank.png" >/dev/null 2>&1
+# shown: blank showings actually seen, the launch one included; a cycle that misses under
+# load is fewer showings, not a failure of the feature.
+shown=1
+for _ in $(seq 12); do
+  { $M "$P" menu File "New Trail"; sleep 0.2
+    $M "$P" set mako.omnibox.field "$U/one.html"; $M "$P" confirm mako.omnibox.field; } >> "$E/loop.txt" 2>&1
+  within gone mako.blank || continue
+  $M "$P" menu File "Close Page" >> "$E/loop.txt" 2>&1
+  within $M "$P" exists mako.blank && shown=$((shown + 1))
+done
+echo "blank shown $shown times" >> "$E/loop.txt"
+$M "$P" menu File "New Trail"; sleep 0.2
+check a-page-hides-it sh -c "$M $P set mako.omnibox.field '$U/one.html' && $M $P confirm mako.omnibox.field && sleep 1 && $M $P exists mako.page && ! $M $P exists mako.blank"
+
+J="$MAKO_RUN/state/trails.json"
+# blank_kept: the one trail is still there and no page is active
+blank_kept() { python3 -c "import json, sys; s = json.load(open('$J')); sys.exit(0 if s['active'] is None and len(s['nodes']) == 1 else 1)"; }
+$M "$P" menu File "New Blank Page"
+within $M "$P" exists mako.blank && shown=$((shown + 1))
+check new-blank-page-shows-a-painting $M "$P" exists mako.blank
+check new-blank-page-keeps-the-trail within blank_kept
+check new-blank-page-opens-a-new-trail sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*desc=\"New trail'"
+$M "$P" shot "$E/address-bar-over-blank.png" >/dev/null 2>&1
+$M "$P" press-id mako.omnibox.scrim
+check closing-the-address-bar-keeps-the-blank-page sh -c "sleep 0.5 && $M $P exists mako.blank"
+$M "$P" shot "$E/blank-after-address-bar.png" >/dev/null 2>&1
+# undimmed: the window's lower half, clear of the address bar, looks the same open or closed
+# (the dimmed window differs by about 0.2 normalized RMSE; identical shots by 0)
+undimmed() {
+  for f in address-bar-over-blank blank-after-address-bar; do
+    magick "$E/$f.png" -gravity south -crop 100%x45%+0+0 +repage "$E/$f-lower.png" || return 1
+  done
+  magick compare -metric RMSE "$E/address-bar-over-blank-lower.png" "$E/blank-after-address-bar-lower.png" null: 2>&1 |
+    sed -n 's/.*(\(.*\)).*/\1/p' | awk '{ exit !($1 < 0.01) }'
+}
+check address-bar-over-blank-page-does-not-dim undimmed
+root=$(python3 -c "import json; print(json.load(open('$J'))['roots'][0])")
+$M "$P" press-id "mako.trail.$root"
+check a-row-brings-its-page-back within sh -c "$M $P exists mako.trail.$root.page && ! $M $P exists mako.blank"
+$M "$P" menu File "New Blank Page"
+within $M "$P" exists mako.blank && shown=$((shown + 1))
+$M "$P" menu File "Close Page"
+check close-page-on-blank-goes-back within sh -c "$M $P exists mako.trail.$root.page && ! $M $P exists mako.blank && ! $M $P exists mako.omnibox"
+check close-page-on-blank-closes-no-page python3 -c "import json, sys; sys.exit(0 if len(json.load(open('$J'))['nodes']) == 1 else 1)"
+sleep 1
+log show --info --last 10m --predicate "processID == $P AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null |
+  sed -n 's/.*blank art \(.*\)$/\1/p' > "$E/backgrounds.txt"
+check one-pick-per-blank test "$(grep -c . "$E/backgrounds.txt")" -eq "$shown"
+check blank-shown-often test "$shown" -ge 8
+check only-the-ten sh -c "! grep -v -x -E 'Aperture fan|Miyo asleep|Miyo at the window|Cubist Miyo|Iris|Qilin|Rainbow squiggle|Canyon strata|Gazers|Great wave' '$E/backgrounds.txt'"
+check every-painting-before-a-repeat test "$(head -10 "$E/backgrounds.txt" | sort -u | grep -c .)" -eq 10
+check never-the-same-twice-in-a-row sh -c "! uniq -d '$E/backgrounds.txt' | grep -q ."
+
+echo "== $fails failure(s); evidence in $E"
+exit "$fails"

@@ -70,6 +70,8 @@ pub enum Action {
     /// sibling is a new trail right after its trail.
     OpenSibling { of: Id, url: String },
     Select { id: Id },
+    /// ⌘N: the blank page, every trail kept and none active, ready to start a new one.
+    Blank,
     /// Close a page and everything beneath it.
     Close { id: Id },
     /// Reopen the most recently closed page, with its subtree, where it was.
@@ -188,6 +190,7 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
             s.active = Some(*id);
             reveal(&mut s, *id);
         }
+        Action::Blank => s.active = None,
         Action::Close { id } => {
             has(&s, *id)?;
             let parent = s.nodes[id].parent;
@@ -498,6 +501,18 @@ mod tests {
     }
 
     fn sibling(of: Id, url: &str) -> Action { Action::OpenSibling { of, url: url.into() } }
+
+    #[test]
+    fn the_blank_page_keeps_every_trail_with_none_active() {
+        let s = run(&sample(), &[Action::Blank]);
+        assert_eq!(s.active, None);
+        assert_eq!(shape(&s), shape(&sample()), "every trail stays");
+        assert!(rows(&s).iter().all(|r| !r.active), "no row is active");
+        assert_eq!(load(&save(&s)).map(|l| l.active), Ok(None), "saves and loads");
+        assert_eq!(run(&s, &[Action::Close { id: 5 }]).active, None, "closing a page keeps the blank page");
+        assert_eq!(run(&s, &[Action::Select { id: 3 }]).active, Some(3), "a page can be selected again");
+        assert_eq!(run(&s, &[Action::Jump { trail: 0 }]).active, Some(1), "⌘1 goes to the first trail's root");
+    }
 
     #[test]
     fn a_sibling_opens_right_after_its_page_under_the_same_parent() {

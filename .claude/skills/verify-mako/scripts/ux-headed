@@ -70,6 +70,8 @@ check no-popup-window sh -c "! $M $P windows | grep -q mako.popup"
 $M "$P" middle-click 140 465; sleep 1.5
 check download-link-opens-no-page sh -c "! echo \"$(kids)\" | grep -q report"
 check download-link-saves-the-file test -f "$MAKO_RUN/state/downloads/report.txt"
+# Every page those middle-clicks opened loaded behind Page M: its title is the fixture's, not empty.
+check background-children-loaded is 'sorted({n[str(c)]["title"] for c in n["1"]["children"]})' "['Page C']"
 $M "$P" shot "$E/middle-click.png" >/dev/null
 
 echo "== middle-click on a sidebar row"

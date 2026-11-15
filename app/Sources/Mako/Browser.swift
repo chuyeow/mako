@@ -53,7 +53,7 @@ let log = Logger(subsystem: "com.wego.mako", category: "browser")
 /// and omnibox controls. Editing and navigation shortcuts keep AppKit's order.
 final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
-        (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
+        (.command, "n"), (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
         (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
         ([.command, .control], "s"),
     ] + (1...9).map { (.command, String($0)) }
@@ -128,13 +128,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private(set) var sidebarState = SidebarState.shown
     private let edge = EdgeView()
     private let topStrip = WindowDragStrip()
-    private let blank = NSImageView()
+    private let blank = BlankArt()
     /// Kept in sync on every change so the AX tree never depends on the menu being opened.
     let trailsMenu = NSMenu(title: "Trails")
     /// Everything the open omnibox puts over the window: the scrim, the card and the panel.
     private let omniLayer = NSView()
     private let scrim = Scrim()
     private let card = OmniCard()
+    private let corner = CornerArt()
     private let omnibox = NSView()
     private let glyph = OmniGlyph()
     private let field = OmniboxField()
@@ -194,9 +195,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         container.setAccessibilityLabel("Page")
         blank.setAccessibilityIdentifier("mako.blank")
         blank.setAccessibilityLabel("No page")
-        blank.image = NSApp.applicationIconImage
-        blank.imageScaling = .scaleProportionallyUpOrDown
-        blank.alphaValue = 0.9
+        // Hidden until the first render finds no page, which picks its painting.
+        blank.isHidden = true
         blank.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(blank)
 
@@ -240,10 +240,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         pageBesideSidebar = container.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor)
         pageFullWidth = container.leadingAnchor.constraint(equalTo: root.leadingAnchor)
         NSLayoutConstraint.activate([
-            blank.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            blank.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            blank.widthAnchor.constraint(equalToConstant: 128),
-            blank.heightAnchor.constraint(equalToConstant: 128),
+            blank.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            blank.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            blank.topAnchor.constraint(equalTo: container.topAnchor),
+            blank.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             sidebarWidth,
             sidebarLeading,
             pageBesideSidebar,
@@ -346,7 +346,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             visited[id] = nil
         }
         let active = store.active
-        let view = active.map(liveView)
+        let view = active.map { liveView($0.id, url: $0.url, title: $0.title) }
         if view !== shown {
             hints.cancel()
             shown?.removeFromSuperview()
@@ -362,6 +362,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             recency.append(id)
         }
         for id in recency.dropLast(Self.maxLiveViews) { unload(id) }
+        if active == nil, blank.isHidden { blank.pickNext() }
         blank.isHidden = active != nil
         window.title = active?.label ?? "Mako"
         window.subtitle = ""
@@ -405,11 +406,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     /// The page's web view, created and loaded from its saved address on first use.
-    private func liveView(_ row: TrailRow) -> WKWebView {
-        if let view = views[row.id] { return view }
-        let id = row.id
+    private func liveView(_ id: UInt64, url: String, title: String) -> WKWebView {
+        if let view = views[id] { return view }
         let w = PageView(frame: .zero, configuration: webConfig)
-        w.onBackgroundLink = { [weak self] url in self?.apply("open_child", ["parent": id, "url": url.absoluteString, "select": false]) }
+        w.onBackgroundLink = { [weak self] url in self?.openChild(beneath: id, url, inBackground: true) }
         w.navigationDelegate = self
         w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
@@ -421,10 +421,28 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             w.observe(\.url) { [weak self] _, _ in MainActor.assumeIsolated { self?.pageChanged(id) } },
         ]
         views[id] = w
-        reported[id] = [row.url, row.title]
-        if restored.remove(id) != nil { visited[id] = URL(string: row.url).map(Self.visitAddress) }
-        if let url = URL(string: row.url) { w.load(URLRequest(url: url)) }
+        reported[id] = [url, title]
+        if restored.remove(id) != nil { visited[id] = URL(string: url).map(Self.visitAddress) }
+        if let url = URL(string: url) { w.load(URLRequest(url: url)) }
         return w
+    }
+
+    /// Every page opened beneath another comes through here. In front, it is selected and
+    /// loads as it is shown. In the background (middle-click, ⌘-click, ⇧F) it starts loading
+    /// now, behind the shown page; WebKit starts no sound or video in a page that is not in a
+    /// window, so it stays quiet until it is first shown (`background-ax` checks).
+    private func openChild(beneath parent: UInt64, _ url: URL, inBackground: Bool) {
+        guard inBackground else {
+            apply("open_child", ["parent": parent, "url": url.absoluteString])
+            return
+        }
+        let before = store.pages
+        guard apply("open_child", ["parent": parent, "url": url.absoluteString, "select": false]) == nil,
+              let id = store.pages.subtracting(before).first else { return }
+        _ = liveView(id, url: url.absoluteString, title: "")
+        // Just behind the shown page in the eviction order, so it never pushes that one out.
+        recency.insert(id, at: max(0, recency.count - 1))
+        for id in recency.dropLast(Self.maxLiveViews) { unload(id) }
     }
 
     private func unload(_ id: UInt64) {
@@ -492,7 +510,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func open(_ url: URL) {
         hideOmnibox()
         if apply("open_trail", ["url": url.absoluteString]) != nil, let parent = store.active?.id {
-            apply("open_child", ["parent": parent, "url": url.absoluteString])
+            openChild(beneath: parent, url, inBackground: false)
         }
     }
 
@@ -551,10 +569,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         scrim.onDismiss = { [unowned self] in hideOmnibox() }
         guard let root = window.contentView else { return }
         omniLayer.isHidden = true
-        for view in [omniLayer, scrim, card, omnibox] { view.translatesAutoresizingMaskIntoConstraints = false }
+        for view in [omniLayer, scrim, card, omnibox, corner] { view.translatesAutoresizingMaskIntoConstraints = false }
         omniLayer.addSubview(scrim)
         omniLayer.addSubview(card)
         omniLayer.addSubview(omnibox)
+        omniLayer.addSubview(corner)
         // Over everything, the sidebar too: while it is open, the omnibox is the window's one task.
         root.addSubview(omniLayer, positioned: .above, relativeTo: nil)
         NSLayoutConstraint.activate([
@@ -570,6 +589,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             card.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: OmniCard.inset),
             card.topAnchor.constraint(equalTo: omnibox.topAnchor, constant: -OmniCard.inset),
             card.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: OmniCard.inset),
+            // Sits on the card's top edge, its foot 12 pt in: above the field's line.
+            corner.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -28),
+            corner.bottomAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            corner.widthAnchor.constraint(equalToConstant: CornerArt.size.width),
+            corner.heightAnchor.constraint(equalToConstant: CornerArt.size.height),
             stack.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor),
             stack.topAnchor.constraint(equalTo: omnibox.topAnchor),
@@ -598,6 +622,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         let look = look(for: target)
         card.look = look
         glyph.look = look
+        corner.pickAtRandom()
+        scrim.dims = blank.isHidden
         field.placeholderString = look == .find ? "Find in page" : "Search or enter address"
         let accent = look.slot.map(NSColor.trail) ?? .ink
         omniEditor.insertionPointColor = accent
@@ -732,6 +758,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         Perf.measure("newTrail")
         showOmnibox(for: .newTrail)
     }
+    /// The blank page with its painting, trails kept, and the omnibox open for a new trail.
+    @objc func newBlankPage(_: Any?) {
+        apply("blank")
+        showOmnibox(for: .newTrail)
+    }
     @objc func newPage(_: Any?) {
         guard let parent = store.active?.id else { return showOmnibox(for: .newTrail) }
         showOmnibox(for: .child(parent))
@@ -840,8 +871,16 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // ⌘W in the About panel or a sign-in popup closes that window, not a page behind it.
         if let key = NSApp.keyWindow, key !== window { return key.performClose(nil) }
         Perf.measure("closePage")
-        guard let id = store.active?.id else { return NSSound.beep() }
+        guard let id = store.active?.id else { return leaveBlankPage() }
         close(id)
+    }
+
+    /// ⌘W on the blank page: back to the page shown before it, else the first trail's root
+    /// (nothing was shown since launch). With no page at all there is nowhere to go.
+    private func leaveBlankPage() {
+        hideOmnibox()
+        if let last = recency.last(where: store.pages.contains) { return select(last) }
+        if apply("jump", ["trail": 0]) != nil { NSSound.beep() }
     }
 
     private func close(_ id: UInt64) {
@@ -886,7 +925,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             if background || action.navigationType == .linkActivated {
                 log.info("child of \(parent) \(url.absoluteString, privacy: .public)\(background ? " (middle-click)" : "", privacy: .public)")
                 // ⌘-click opens the page beneath this one without leaving it.
-                apply("open_child", ["parent": parent, "url": url.absoluteString, "select": !(background || action.modifierFlags.contains(.command))])
+                openChild(beneath: parent, url, inBackground: background || action.modifierFlags.contains(.command))
                 return .cancel
             }
         }
@@ -970,13 +1009,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
                  for action: WKNavigationAction, windowFeatures features: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url, isWeb(url), let parent = id(of: webView), (webView as? PageView)?.claimBackground() == true {
             log.info("child of \(parent) \(url.absoluteString, privacy: .public) (middle-click)")
-            apply("open_child", ["parent": parent, "url": url.absoluteString, "select": false])
+            openChild(beneath: parent, url, inBackground: true)
             return nil
         }
         guard action.navigationType != .linkActivated else {
             if let url = action.request.url {
                 if isWeb(url), let parent = id(of: webView) {
-                    apply("open_child", ["parent": parent, "url": url.absoluteString])
+                    openChild(beneath: parent, url, inBackground: false)
                 } else {
                     webView.load(action.request)
                 }
@@ -1133,6 +1172,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 @MainActor
 final class Scrim: NSView {
     var onDismiss: () -> Void = {}
+    /// Off over the blank page: there is nothing to dim, and the painting stays as it is.
+    var dims = true { didSet { needsDisplay = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1145,6 +1186,7 @@ final class Scrim: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard dims else { return }
         NSColor.scrim.setFill()
         dirtyRect.intersection(bounds).fill()
     }
@@ -1168,6 +1210,86 @@ enum OmniLook: Equatable {
         case .newTrail(let slot), .page(let slot), .child(let slot): slot
         case .find: nil
         }
+    }
+}
+
+/// A small picture that peeks over the omnibox's top-right corner, a different one each
+/// time it opens. Clicks go through it to whatever is beneath.
+@MainActor
+final class CornerArt: NSImageView {
+    static let pictures: [(name: String, file: String)] = [
+        ("Miyo peeking", "miyo"), ("Squiggle", "squiggle"),
+    ]
+    static let size = NSSize(width: 120, height: 56)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        imageScaling = .scaleProportionallyUpOrDown
+        imageAlignment = .alignBottomRight
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func pickAtRandom() {
+        guard let picture = Self.pictures.randomElement() else { return }
+        image = Bundle.main.url(forResource: picture.file, withExtension: "png", subdirectory: "Corners").flatMap(NSImage.init(contentsOf:))
+        log.info("omnibox corner \(self.image == nil ? "missing " : "", privacy: .public)\(picture.name, privacy: .public)")
+    }
+}
+
+/// What the page area shows with no page open: the next painting from a shuffled deck each
+/// time it appears, so all of them show before any repeats, filling the area and anchored at its foot, over sidebar paper. A narrow area
+/// crops the sides, so each painting keeps the side its subject sits on (0 left, 1 right).
+@MainActor
+final class BlankArt: NSView {
+    static let pictures: [(name: String, file: String, anchor: CGFloat)] = [
+        ("Aperture fan", "aperture", 1), ("Miyo asleep", "miyo-asleep", 0), ("Miyo at the window", "miyo-window", 1),
+        ("Cubist Miyo", "miyo-cubist", 1), ("Iris", "iris", 0.5), ("Qilin", "qilin", 0), ("Rainbow squiggle", "squiggle", 0.5),
+        ("Canyon strata", "strata", 0.5), ("Gazers", "gazers", 1), ("Great wave", "wave", 0),
+    ]
+    private var image: NSImage?
+    private var anchor: CGFloat = 0.5
+    private var deck: [Int] = []
+    private var last: Int?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.image)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func pickNext() {
+        if deck.isEmpty {
+            deck = Array(Self.pictures.indices).shuffled()
+            // A new round never opens with the painting that closed the last one.
+            if deck.count > 1, deck.first == last { deck.swapAt(0, deck.count - 1) }
+        }
+        let index = deck.removeFirst()
+        last = index
+        let picture = Self.pictures[index]
+        image = Bundle.main.url(forResource: picture.file, withExtension: "jpg", subdirectory: "Backgrounds").flatMap(NSImage.init(contentsOf:))
+        anchor = picture.anchor
+        needsDisplay = true
+        log.info("blank art \(self.image == nil ? "missing " : "", privacy: .public)\(picture.name, privacy: .public)")
+    }
+
+    override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.sidebarPaper.setFill()
+        bounds.fill()
+        guard let image, image.size.width > 0, image.size.height > 0 else { return }
+        let scale = max(bounds.width / image.size.width, bounds.height / image.size.height)
+        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        // The paintings are on cream paper; at full strength they would glare in dark mode.
+        image.draw(in: NSRect(x: (bounds.width - size.width) * anchor, y: 0, width: size.width, height: size.height),
+                   from: .zero, operation: .sourceOver, fraction: dark ? 0.35 : 1)
     }
 }
 

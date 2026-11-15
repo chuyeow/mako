@@ -148,5 +148,16 @@ within sh -c "$M $P title | grep -q 'Renamed #here'"
 $M "$P" menu View Reload; sleep 1.5
 check jump-then-reload-is-no-visit history_is "retitle.html:1"
 
+echo "== art over the corner, picked at random each time it opens"
+for _ in $(seq 30); do $M "$P" menu File "Open Location…"; sleep 0.1; done
+$M "$P" shot "$E/corner.png" >/dev/null 2>&1
+$M "$P" press-id mako.omnibox.scrim
+sleep 1
+log show --info --last 10m --predicate "processID == $P AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null |
+  sed -n 's/.*omnibox corner \(.*\)$/\1/p' > "$E/corners.txt"
+check corner-on-every-open test "$(grep -c . "$E/corners.txt")" -ge 30
+check corner-only-the-two-pictures sh -c "! grep -v -x -E 'Miyo peeking|Squiggle' '$E/corners.txt'"
+check corner-shows-both test "$(sort -u "$E/corners.txt" | grep -c .)" -eq 2
+
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"

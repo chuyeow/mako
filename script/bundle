@@ -11,6 +11,8 @@ rm -rf build/Mako.app
 mkdir -p "$app/MacOS" "$app/Resources"
 cp .build/release/Mako "$app/MacOS/Mako"
 cp app/Resources/AppIcon.icns "$app/Resources/"
+cp -R app/Resources/Corners "$app/Resources/"
+cp -R app/Resources/Backgrounds "$app/Resources/"
 cat > "$app/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
