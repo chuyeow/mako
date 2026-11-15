@@ -1,0 +1,100 @@
+#!/bin/bash
+# Link hints through accessibility, without focus: History → Jump to Link… labels exactly the
+# links and controls in view (not hidden, disabled, covered or below the fold ones), pressing
+# a label clicks what it marks with a real, trusted click, Open Link Beneath… labels only web
+# links and opens the chosen one beneath without leaving, and switching pages, hiding the
+# sidebar or a page with nothing to label leaves no labels. The keys (F, ⇧F, typing a label,
+# Delete, Escape, a page that keeps F) are in hints-keys-headed.
+# Needs Accessibility permission; no keys or clicks are sent. Prints PASS/FAIL per check;
+# exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/hints-ax"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+within() { for _ in $(seq 30); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+labels() { $M "$P" tree 30 | grep -o 'mako\.hint\.[a-z]*" desc="[^"]*' | sed -e 's/mako\.hint\.//' -e 's/" desc="/ /' -e "s#http://127.0.0.1:$port/##"; }
+count() { labels | grep -c . ; }
+# parent-of <title>: the title of that page's parent in trails.json, or "none"
+parent-of() { python3 -I -c '
+import json, sys
+n = json.load(open(sys.argv[1]))["nodes"]
+page = next(v for v in n.values() if v["title"] == sys.argv[2])
+print(n[str(page["parent"])]["title"] if page["parent"] else "none")' "$MAKO_RUN/state/trails.json" "$1"; }
+open-hints() { $M "$P" menu History "$1"; within sh -c "$M $P tree 30 | grep -q mako.hint"; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/hints >/dev/null 2>&1 &
+srv=$!; sleep 1
+U=http://127.0.0.1:$port
+out=$($C launch "" "$U/index.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); $M "$P" wait-title Hints 10 >/dev/null
+# The fixture is page 1; its title changes as its controls are pressed.
+fresh() { $M "$P" press-id mako.trail.1; within sh -c "$M $P tree 4 | grep -q 'mako.trail.1\".*value=\"selected'"; sleep 0.5; }
+
+echo "== jump to link"
+open-hints "Jump to Link…"
+labels > "$MAKO_RUN/evidence/labels.txt"; $M "$P" shot "$MAKO_RUN/evidence/labels.png" >/dev/null 2>&1
+check labels-only-what-is-in-view test "$(labels)" = "$(printf 'q two.html\nw three.html\ne Press\na Type here\ns Script\nd Save\nz three.html?half')"
+check menu-shows-shortcut sh -c "$M $P tree 4 --menus | grep -q 'Jump to Link….*cmd=\"J\"'"
+$M "$P" press-id mako.hint.q
+check link-label-follows-the-link within $M "$P" wait-title Two 1
+check followed-link-opens-beneath test "$(parent-of Two)" = Hints
+check labels-gone-after-follow test "$(count)" = 0
+
+fresh; open-hints "Jump to Link…"; $M "$P" press-id mako.hint.e
+check button-gets-a-trusted-click within $M "$P" wait-title "pressed trusted" 1
+open-hints "Jump to Link…"; $M "$P" press-id mako.hint.a
+check text-field-label-focuses-it within $M "$P" wait-title typing 1
+open-hints "Jump to Link…"; $M "$P" press-id mako.hint.s
+check script-link-runs within $M "$P" wait-title "script link" 1
+open-hints "Jump to Link…"; $M "$P" press-id mako.hint.z
+check half-covered-link-clicks-its-visible-part within sh -c "python3 -I -c 'import json,sys; n=json.load(open(sys.argv[1]))[\"nodes\"]; sys.exit(not any(v[\"url\"].endswith(\"three.html?half\") for v in n.values()))' '$MAKO_RUN/state/trails.json'"
+fresh; open-hints "Jump to Link…"; $M "$P" press-id mako.hint.d
+check download-link-downloads within sh -c "ls '$MAKO_RUN/state/downloads' | grep -q three"
+
+echo "== open link beneath"
+open-hints "Open Link Beneath…"
+check beneath-labels-only-web-links test "$(labels)" = "$(printf 'q two.html\nw three.html\ne three.html?half')"
+before=$($M "$P" title)
+$M "$P" press-id mako.hint.w
+check beneath-opens-three within sh -c "$M $P menu-items Trails | grep -q three.html"
+check beneath-stays-on-page test "$($M "$P" title)" = "$before"
+check beneath-labels-gone test "$(count)" = 0
+
+echo "== zoomed page"
+fresh; $M "$P" menu View "Zoom In"; $M "$P" menu View "Zoom In"; $M "$P" menu View Reload
+$M "$P" wait-title Hints 5 >/dev/null
+open-hints "Jump to Link…"; $M "$P" shot "$MAKO_RUN/evidence/zoomed.png" >/dev/null 2>&1; $M "$P" press-id mako.hint.a
+check zoomed-label-clicks-its-field within $M "$P" wait-title typing 1
+$M "$P" menu View "Actual Size"
+
+echo "== the address bar ends hints"
+fresh; check labels-before-address-bar open-hints "Jump to Link…"
+$M "$P" menu File "Open Location…"
+check address-bar-ends-hints within sh -c "test \$($M $P tree 30 | grep -c mako.hint) = 0"
+$M "$P" press-id mako.omnibox.scrim
+
+echo "== labels end"
+fresh
+check labels-before-switch open-hints "Jump to Link…"
+$M "$P" press-id "mako.trail.$(python3 -I -c 'import json,sys; n=json.load(open(sys.argv[1]))["nodes"]; print(next(k for k,v in n.items() if v["title"]=="Two"))' "$MAKO_RUN/state/trails.json")"
+check switching-pages-ends-hints within sh -c "test \$($M $P tree 30 | grep -c mako.hint) = 0"
+fresh
+check labels-before-hide open-hints "Jump to Link…"
+$M "$P" menu View "Hide Sidebar"
+check hiding-sidebar-ends-hints within sh -c "test \$($M $P tree 30 | grep -c mako.hint) = 0"
+$M "$P" menu View "Show Sidebar"
+$M "$P" menu Trails "Two"; $M "$P" wait-title Two 5 >/dev/null
+$M "$P" menu History "Jump to Link…"; sleep 1
+check nothing-to-label-shows-nothing test "$(count)" = 0
+check hints-shot-taken test -s "$MAKO_RUN/evidence/labels.png"
+
+echo "== hints-ax failed=$fails"
+exit "$fails"

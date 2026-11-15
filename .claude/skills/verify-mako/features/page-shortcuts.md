@@ -1,6 +1,6 @@
 # Page shortcuts
 
-Mako's own shortcuts always reach Mako, even when a page has focus and claims the key: ⌘T, ⌥⌘T, ⇧⌘T, ⌘W, ⌘L, ⌘,, ⌘., ⌥⌘C, ⌘1–⌘9, and ⌃Tab / ⌃⇧Tab. The match is exact: ⌘⇧1 or ⌃⌘T is not Mako's and goes to the page first. Every other ⌘ key (⌘Z, ⌘C, ⌘V, ⌘R, ⌘F, ⌘G, ⌘[, ⌘], ⌘=, ⌘-, ⌘0) goes to the web page first and reaches Mako's menu only if the page lets it pass, so web apps such as Google Docs keep their own undo and find.
+Mako's own shortcuts always reach Mako, even when a page has focus and claims the key: ⌘T, ⌥⌘T, ⇧⌘T, ⌘W, ⌘L, ⌘,, ⌘., ⌥⌘C, ⌘1–⌘9, and ⌃Tab / ⌃⇧Tab. The match is exact: ⌘⇧1 or ⌃⌘T is not Mako's and goes to the page first. Every other ⌘ key (⌘Z, ⌘C, ⌘V, ⌘R, ⌘F, ⌘G, ⌘[, ⌘], ⌘=, ⌘-, ⌘0) goes to the web page first and reaches Mako's menu only if the page lets it pass, so web apps such as Google Docs keep their own undo and find. A bare F or ⇧F that the page and its text fields leave alone starts link hints (see [Link hints](./link-hints.md)); a page that handles F itself, such as a video player's full-screen key, keeps it.
 
 ## Sub-features
 
