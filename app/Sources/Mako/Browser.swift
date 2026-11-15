@@ -53,7 +53,7 @@ let log = Logger(subsystem: "com.wego.mako", category: "browser")
 /// and omnibox controls. Editing and navigation shortcuts keep AppKit's order.
 final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
-        (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
+        (.command, "n"), (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
         (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
         ([.command, .control], "s"),
     ] + (1...9).map { (.command, String($0)) }
@@ -738,6 +738,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     @objc func newTrail(_: Any?) {
         Perf.measure("newTrail")
+        showOmnibox(for: .newTrail)
+    }
+    /// The blank page with its painting, trails kept, and the omnibox open for a new trail.
+    @objc func newBlankPage(_: Any?) {
+        apply("blank")
         showOmnibox(for: .newTrail)
     }
     @objc func newPage(_: Any?) {
