@@ -113,7 +113,7 @@ let usage = """
     makoctl <pid> set <ax-identifier> <text> set an element's value (the omnibox field)
     makoctl <pid> confirm <ax-identifier>    AXConfirm (Enter) on a text field
     makoctl <pid> windows                  one line per window (popups have id="mako.popup")
-    makoctl <pid> menu-items <Menu>        list a menu's item titles (checked = active)
+    makoctl <pid> menu-items <Menu> [--enabled]   list a menu's item titles (* = checked); --enabled: only those that can be chosen now
     makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+f, ctrl+tab
     makoctl <pid> type <text>              type text into the focused element
     makoctl <pid> wait-title <substring> [seconds]
@@ -320,7 +320,12 @@ case "windows":
     for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":
     guard args.count > 2 else { fail(usage, 64) }
-    for i in children(submenu(app, args[2])) { if let t = str(i, kAXTitleAttribute) { print(line(i).contains("checked") ? "* \(t)" : "  \(t)") } }
+    // --enabled: only the items that can be chosen right now.
+    let enabledOnly = args.contains("--enabled")
+    for i in children(submenu(app, args[2])) {
+        guard let t = str(i, kAXTitleAttribute), !enabledOnly || attr(i, kAXEnabledAttribute) as? Bool == true else { continue }
+        print(line(i).contains("checked") ? "* \(t)" : "  \(t)")
+    }
 case "key":
     guard args.count > 2 else { fail(usage, 64) }
     postCombo(args[2])
